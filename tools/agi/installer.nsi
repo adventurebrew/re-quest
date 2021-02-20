@@ -1,8 +1,22 @@
-﻿# "C:\Program Files (x86)\NSIS\Bin\GenPat.exe" C:\Zvika\Games\PoliceQuest\AGI.check\WORDS.TOK C:\Zvika\Games\PoliceQuest\AGI\WORDS.TOK WORDS.TOK.patch
-# "C:\Program Files (x86)\NSIS\Bin\GenPat.exe" C:\Zvika\Games\PoliceQuest\AGI.check\LOGDIR C:\Zvika\Games\PoliceQuest\AGI\LOGDIR logdir.patch
+﻿# STOPPED DEV'ING, moved to PQ1 dir
+# will return to this as template...
+#
+#
+#
+# "C:\Program Files (x86)\NSIS\Bin\GenPat.exe" C:\Zvika\Games\PoliceQuest\AGI.check\WORDS.TOK C:\Zvika\Games\PoliceQuest\AGI\WORDS.TOK WORDS.TOK.patch
+# "C:\Program Files (x86)\NSIS\Bin\GenPat.exe" C:\Zvika\ames\PoliceQuest\AGI.check\LOGDIR C:\Zvika\Games\PoliceQuest\AGI\LOGDIR logdir.patch
 # "C:\Program Files (x86)\NSIS\Bin\GenPat.exe" C:\Zvika\Games\PoliceQuest\AGI.check\VOL.0 C:\Zvika\Games\PoliceQuest\AGI\VOL.0 VOL.0.patch
 
 !include MUI2.nsh
+
+!macro BackupAndUpdateFile FILE 
+    IfFileExists "${INSTDIR}\ORIG\*.*" +2
+        CreateDirectory "${INSTDIR}\ORIG"
+    IfFileExists "${INSTDIR}\ORIG\${FILE}" +2
+        CopyFiles "${INSTDIR}\${FILE}" "${INSTDIR}\ORIG\${FILE}"
+    ;TODO - check so far, if works well, move here the update code
+!macroend
+
 
 ; The name of the installer
 Name "התרגום העברי של PQ1"
@@ -39,7 +53,7 @@ Section "Update file"
   
   ; Update the file - it will be replaced with the new version
   DetailPrint "Updating updatefile.txt using patch..."
-  !insertmacro VPatchFile "C:\Zvika\ScummVM-dev\HebrewAdventure\pq1\VOL.0.patch" "$INSTDIR\VOL.0" "$INSTDIR\VOL.0.tmp"
+  !insertmacro VPatchFile VOL.0.patch "$INSTDIR\VOL.0" "$INSTDIR\VOL.0.tmp"
 
 IfErrors 0 +2
     abort
