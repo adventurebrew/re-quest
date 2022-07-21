@@ -3,7 +3,7 @@
 # while "new" version (used by vocab.900) has 8 bits ascii
 #
 # reference: http://sci.sierrahelp.com/Documentation/SCISpecifications/27-TheParser.html#AEN5794
-# for Hebrew translation, we need to the vocab to be in the newer version
+# for Hebrew translation, we need the vocab to be in the newer version
 
 # this exports vocab file to a csv
 # see also vocab_import.py
@@ -16,6 +16,7 @@ import re
 
 import config
 
+SIERRA_VOCAB_HEADER = b'\x86\0'
 VOCAB_FILE = "vocab.000"
 
 classes = {
@@ -68,6 +69,9 @@ def get_said_per_room(gamedir):
 
 def vocab_export(gamedir, csvdir):
     in_vocab = list(pathlib.Path(os.path.join(gamedir, VOCAB_FILE)).read_bytes())
+    assert bytes(in_vocab[:2]) == SIERRA_VOCAB_HEADER
+    in_vocab = in_vocab[2:]
+
     said_per_room = get_said_per_room(gamedir)
     # TODO: automatic recognize file kind, and support exporting new kind
     kind = "old"
@@ -82,6 +86,8 @@ def vocab_export(gamedir, csvdir):
             if at_start_of_word:
                 at_start_of_word = False
                 current_word = current_word[:int(val)]
+            elif val < 0x20:
+                print(f"Warning: strange char at position {hex(idx)} with ascii value {val}. Ignoring")
             elif val < 0x80:
                 current_word += chr(val)
             else:
