@@ -1,17 +1,14 @@
 # spec: https://wiki.scummvm.org/index.php/SCI/Specifications/Sound/SCI0_Resource_Format
 
-# TODO: cue, loop
 # TODO: read ancient snd format?
 # TODO: digital sample and channel
 # TODO: The MT-32 always plays channel 9, the MIDI percussion channel, regardless of whether or not the channel is flagged for the device. Other MIDI devices may also do this.
 # TODO: sci0: play only specific device
 # TODO: sci1: choose device to play/save_midi
 # TODO: sci0: write
-# TODO: sci1: write
+# TODO: sci1: write from arbitrary midi
+# TODO: verify cue, loop in writing (sound.200)
 
-# "C:\Users\Zvika\Documents\OLD_COMPUTER\users-zvika\Zvika\gk1_fluid.mid" --play
-# "C:\Zvika\ScummVM-dev\HebrewAdventure\checking\sound.062" --play
-# "C:\Zvika\ScummVM-dev\HebrewAdventure\checking\106.snd" --input_version SCI1+
 
 import argparse
 import warnings
@@ -19,6 +16,9 @@ from pathlib import Path
 from enum import Flag, Enum
 import io
 from copy import deepcopy
+import sys
+import re
+from ast import literal_eval
 
 import mido
 import rtmidi  # pip install python-rtmidi
@@ -28,14 +28,16 @@ SIERRA_SND_HEADER = b'\x84\0'
 NUM_OF_CHANNELS = 16
 TICKS_PER_BIT = 30
 
-SCI1_DEVICE_GM = 7
-
 
 def read_le(stream, length=1):
     b = stream.read(length)
     if b == b'':
         raise EOFError
     return int.from_bytes(b, byteorder='little')
+
+
+def write_le(stream, data, length=1):
+    stream.write(data.to_bytes(length=length, byteorder='little'))
 
 
 class SCI0_Devices(Flag):
@@ -56,9 +58,18 @@ class SCI1_Devices(Enum):
     UNKNOWN1 = 0x08
     GAME_BLASTER = 0x09
     UNKNOWN2 = 0x0b
-    MT32 = 0x0c
+    MT_32 = 0x0c
     SPEAKER = 0x12
-    PS1 = 0x13
+    PC_JR = 0x13
+
+
+def get_sierra_delay_bytes(delay):
+    result = b''
+    while delay > 240:
+        result += int.to_bytes(0xf8, length=1, byteorder='little')
+        delay %= 240
+    result += int.to_bytes(delay, length=1, byteorder='little')
+    return result
 
 
 def show_ports():
@@ -84,6 +95,7 @@ def read_messages(stream, size=None):
             return stream.tell() - start_point >= size
 
     track = MidiTrack()
+    track.append(mido.MetaMessage(type='track_name', name='SIERRA_SND'))
     start_point = stream.tell()
     try:
         while not read_enough():
@@ -134,18 +146,29 @@ def read_sci0_snd_file(stream, info):
     if digital_sample != 0:
         warnings.warn(
             "Sound file has a digital sample; currently not supported and ignored. Contact Zvika, or raise an issue")
-    channels = []
+    devices = {}
     for ch in range(NUM_OF_CHANNELS):
         voices = read_le(stream)
         hardware = SCI0_Devices(read_le(stream))
         if hardware:
-            if info:
-                print(f'Channel {ch} has {voices} voices; used by {hardware}')
-            channels.append([ch, voices, hardware])
+            for device in SCI0_Devices:
+                if device in hardware:
+                    channels = devices.get(device, [])
+                    channels.append({'ch': ch + 1, 'voices': voices})
+                    devices[device] = channels
+
     midfile = MidiFile(ticks_per_beat=TICKS_PER_BIT)
+    info_track = MidiTrack()
+    info_track.append(mido.MetaMessage(type='track_name', name='MIDI_SCI0_HEADER'))
+    for device in devices:
+        info_track.append(mido.MetaMessage(type='device_name', name=f'Device {device.name} uses {devices[device]}'))
+        if info:
+            print(f'Device {device.name} uses {devices[device]}')
+    midfile.tracks.append(info_track)
+
     track = read_messages(stream)
     midfile.tracks.append(track)
-    # TODO incorporate channels info into midfile
+
     return midfile
 
 
@@ -187,8 +210,12 @@ def read_sci1_snd_file(stream, info):
                 channel_nums.append(read_le(stream) % 16 + 1)
             print(f'Device {SCI1_Devices(track).name} uses channels: {channel_nums}')
 
-    # TODO treat all devices! currently taking only GM
-    for channel in device_tracks[SCI1_DEVICE_GM]:
+    # TODO treat all devices! currently taking only GM/MT32
+    try:
+        device_track = device_tracks[SCI1_Devices.GM.value]
+    except KeyError:
+        device_track = device_tracks[SCI1_Devices.MT_32.value]
+    for channel in device_track:
         stream.seek(channel['data_offset'])
         channel_number = read_le(stream)
         if channel_number == 0xfe:
@@ -209,17 +236,70 @@ def read_sci1_snd_file(stream, info):
     return midfile
 
 
-def read_midi_file(p):
-    midfile = MidiFile(p)
-    for track in midfile.tracks:
-        for i, msg in enumerate(track):
-            if msg.is_meta and msg.type == 'text':
-                try:
-                    track[i] = mido.Message.from_str(msg.text)
-                except:
-                    pass
+def save_sci1(midfile, input_file):
+    if midfile.tracks[0].name != 'MIDI_SCI0_HEADER':
+        sys.exit('Currently not supporting such saving; contact Zvika, or open an issue')  # TODO
 
-    return midfile
+    devices = {}
+    for msg in midfile.tracks[0]:
+        if msg.type == 'device_name' and msg.name.startswith('Device '):
+            m = re.match(r'Device (.*) uses (\[.*)', msg.name)
+            if m:
+                try:
+                    device = SCI1_Devices[m.group(1)]
+                    channels = literal_eval(m.group(2))
+                    devices[device] = channels
+                except KeyError:
+                    print("Ignoring device " + m.group(1))
+
+    # unify all messages from all tracks; change time from delta to absolute
+    messages = []
+    timer = 0
+    for msg in mido.merge_tracks(midfile.tracks):
+        timer += msg.time
+        msg.time = timer
+        messages.append(msg)
+
+    header_size = sum([1  # track type
+                       + len(devices[d]) * 6  # (2 unknown, 2 offset, 2 size) for each channel
+                       + 1  # ending 0xff - no more channels
+                       for d in devices
+                       ]
+                      ) + 1  # ending 0xff - no more tracks
+
+    channel_offsets = {}
+    channel_sizes = {}
+    channel_nums = sorted(list(set([m.channel for m in messages if not m.is_realtime and not m.is_meta])))
+    with io.BytesIO() as channels_stream:
+        for ch in channel_nums:
+            timer = 0
+            channel_offsets[ch] = channels_stream.tell()
+            write_le(channels_stream, ch)  # TODO flags
+            write_le(channels_stream, 0x1)  # TODO poly and prio
+            for msg in messages:
+                if not msg.is_meta and (msg.is_realtime or msg.channel == ch):
+                    delta = msg.time - timer
+                    timer = msg.time
+                    channels_stream.write(get_sierra_delay_bytes(delta))
+                    channels_stream.write(msg.bin())
+            channel_sizes[ch] = channels_stream.tell() - channel_offsets[ch]
+        channels_bytes = channels_stream.getvalue()
+
+    output_file = input_file + ".snd"  # TODO let user control file name
+    with open(output_file, 'wb') as f:
+        f.write(SIERRA_SND_HEADER)
+        for device in devices:
+            write_le(f, device.value)
+            device_channels = [c['ch'] - 1 for c in devices[device]]
+            for channel in device_channels:
+                write_le(f, 0xcafe, 2)  # unknown
+                write_le(f, channel_offsets[channel] + header_size, 2)
+                write_le(f, channel_sizes[channel], 2)
+            write_le(f, 0xff)
+        write_le(f, 0xff)
+        assert f.tell() == 2 + header_size  # 2 is the SIERRA_SND_HEADER
+        f.write(channels_bytes)
+    print(f'Saved {output_file}')
 
 
 def read_input(input_file, input_version, info):
@@ -245,11 +325,26 @@ def play(midfile, port=None, verbose=False):
         port.send(msg)
 
 
+def read_midi_file(p):
+    midfile = MidiFile(p)
+    for track in midfile.tracks:
+        for i, msg in enumerate(track):
+            if msg.is_meta and msg.type == 'text':
+                try:
+                    track[i] = mido.Message.from_str(msg.text)
+                except:
+                    pass
+
+    return midfile
+
+
 def save_midi(midfile, input_file):
     midfile_copy = deepcopy(midfile)
     for track in midfile_copy.tracks:
         for i, msg in enumerate(track):
-            if msg.is_realtime:
+            if msg.is_realtime or \
+                    (msg.type == 'program_change' and msg.channel == 15) or \
+                    (msg.type == 'control_change' and msg.control == 0x60):
                 track[i] = mido.MetaMessage(type='text', text=str(msg))
 
     filename = input_file + ".mid"
@@ -267,6 +362,7 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", "-v", action='store_true', help="show midi messages as they are played")
     parser.add_argument("--info", "-f", action='store_true', help="prints info about the file")
     parser.add_argument("--save_midi", "-m", action='store_true', help="save as .mid file")
+    parser.add_argument("--save_sci1", "-1", action='store_true', help="save as .snd SCI1+ file")
     parser.add_argument("--show_ports", "-s", action='store_true', help="show available MIDI ports")
     parser.add_argument("--port", "-t", help="select MIDI port to use, instead of the default one")
     args = parser.parse_args()
@@ -281,6 +377,9 @@ if __name__ == "__main__":
 
     if args.save_midi:
         save_midi(midfile, args.input_file)
+
+    if args.save_sci1:
+        save_sci1(midfile, args.input_file)
 
     if args.play:
         play(midfile, args.port, args.verbose)
