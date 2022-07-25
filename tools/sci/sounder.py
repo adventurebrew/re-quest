@@ -9,16 +9,15 @@
 # TODO: --info
 
 # "C:\Users\Zvika\Documents\OLD_COMPUTER\users-zvika\Zvika\gk1_fluid.mid" --play
-# "C:\Zvika\ScummVM-dev\HebrewAdventure\checking\sound.062"
+# "C:\Zvika\ScummVM-dev\HebrewAdventure\checking\sound.062" --play
 # "C:\Zvika\ScummVM-dev\HebrewAdventure\checking\106.snd"
 
 import argparse
 import warnings
 from pathlib import Path
 from enum import Flag
-import time
+import io
 
-from sorcery import dict_of
 import mido
 import rtmidi  # pip install python-rtmidi
 from mido import MidiFile, MidiTrack
@@ -26,6 +25,13 @@ from mido import MidiFile, MidiTrack
 SIERRA_SND_HEADER = b'\x84\0'
 NUM_OF_CHANNELS = 16
 TICKS_PER_BIT = 30
+
+
+def read_le(stream, length=1):
+    b = stream.read(length)
+    if b == b'':
+        raise EOFError
+    return int.from_bytes(b, byteorder='little')
 
 
 class Devices(Flag):
@@ -53,128 +59,130 @@ def get_event_length(status):
         return 3
 
 
-def read_messages(snd_bytes, idx):
+def read_messages(stream):
     midfile = MidiFile(ticks_per_beat=TICKS_PER_BIT)
     track = MidiTrack()
     midfile.tracks.append(track)
     try:
         while True:
             delta = 0
-            while snd_bytes[idx] == 0xf8:
+            d = read_le(stream)
+            while d == 0xf8:
                 delta += 240
-                idx += 1
-            assert snd_bytes[idx] <= 0xe9
-            delta += snd_bytes[idx]
-            idx += 1
+                d = read_le(stream)
+            assert d <= 0xe9
+            delta += d
 
             # status
-            if snd_bytes[idx] >= 0x80:
-                status = snd_bytes[idx]
-                idx += 1
+            d = read_le(stream)
+            if d >= 0x80:
+                status = d
+            else:
+                stream.seek(-1, io.SEEK_CUR)
+
             length = get_event_length(status) - 1
-            event = status.to_bytes(1, byteorder='little') + snd_bytes[idx:idx + length]
+            event = status.to_bytes(1, byteorder='little') + stream.read(length)
             try:
                 msg = mido.Message.from_bytes(event)
                 msg.time = delta
                 if msg.is_realtime:
-                    print(msg)
-                    # TODO: add it as meta
+                    warnings.warn("ignoring realtime message: " + str(msg))  # TODO: add it as meta
                 else:
                     track.append(msg)
             except ValueError as e:
                 print(e)
-                print('value error. previous status: ' + hex(status) + ". " + snd_bytes[idx:idx + length].hex())
-            idx += length
-    except IndexError:
+                print('value error. previous status: ' + hex(status) + ". " + event.hex())
+    except EOFError:
         return midfile
 
 
 def read_snd_file(p, input_version):
-    idx = 0
-    snd_bytes = p.read_bytes()
-    assert snd_bytes[:2] == SIERRA_SND_HEADER
-    idx += 2
+    stream = io.BytesIO(p.read_bytes())
+    assert stream.read(2) == SIERRA_SND_HEADER
     if input_version == 'SCI0':
-        digital_sample = snd_bytes[idx]
-        if digital_sample != 0:
-            warnings.warn(
-                "Sound file has a digital sample; currently not supported and ignored. Contact Zvika, or raise an issue")
-        idx += 1
-        channels = []
-        for ch in range(NUM_OF_CHANNELS):
-            voices = snd_bytes[idx]
-            hardware = Devices(snd_bytes[idx + 1])
-            idx += 2
-            if hardware:
-                channels.append(dict_of(ch, voices, hardware))
-        midfile = read_messages(snd_bytes, idx)
-        # TODO incorporate channels info into midfile
-        return midfile
+        return read_sci0_snd_file(stream)
     elif input_version == 'SCI1+':
-        # marker = snd_bytes[idx]
-        # idx += 1
-        # track_count = 0
-        # while marker != 0xff:
-        #     track_count += 1
-        #     channel_marker = snd_bytes[idx]
-        #     idx += 1
-        #     while channel_marker != 0xff:
-        #         idx += 5
-        #         channel_marker = snd_bytes[idx]
-        #         idx += 1
-        #     marker = snd_bytes[idx]
-        #     idx += 1
-        #
-        # #TODO ugly - get rid of previous code and the following line
-        # idx = 2
-        # for i in range(track_count):
-        #     track_type = snd_bytes[idx]
-        #     idx += 1
-
-        while True:
-            track_type = snd_bytes[idx]
-            idx += 1
-            if track_type != 0xf0:
-                idx += 2  # 2 unknown bytes, ignoring
-                data_offset = int.from_bytes(snd_bytes[idx:idx + 1], byteorder='little')
-                idx += 2
-                print('offset', data_offset)
-                size = int.from_bytes(snd_bytes[idx:idx + 1], byteorder='little')
-                idx += 2
-                print('size', size)
-                assert size > 0
-                # TODO have we already processed this channel?
-
-            else:
-                # digital track, not supported
-                idx += 6
-            print(f'closing channel. last byte is: {snd_bytes[idx]}')
-            idx += 1
-
-        # tracks = []
-        # while True:
-        #     type = snd_bytes[idx]
-        #     print(hex(type))
-        #     idx += 1
-        #     if type == 0xff:
-        #         break
-        #     if type == 0xf0:
-        #         # digitial track. not supported in ScummVM, skipping
-        #         idx += 6
-        #         print('skipping digital track')
-        #     else:
-        #         raise NotImplementedError
-        #         offset = int.from_bytes(snd_bytes[idx:idx + 1], byteorder='little')
-        #         idx + 2
-        #         print(offset)
-        #         size = int.from_bytes(snd_bytes[idx:idx + 3], byteorder='little')
-        #         print(size)
-        #         assert size > 0
-        midfile = read_messages(snd_bytes, 0x41a)
-        return midfile
-
+        return read_sci1_snd_file(stream)
     else:
         raise NotImplementedError
+
+
+def read_sci0_snd_file(stream):
+    digital_sample = read_le(stream)
+    if digital_sample != 0:
+        warnings.warn(
+            "Sound file has a digital sample; currently not supported and ignored. Contact Zvika, or raise an issue")
+    channels = []
+    for ch in range(NUM_OF_CHANNELS):
+        voices = read_le(stream)
+        hardware = Devices(read_le(stream))
+        if hardware:
+            channels.append([ch, voices, hardware])
+    midfile = read_messages(stream)
+    # TODO incorporate channels info into midfile
+    return midfile
+
+
+def read_sci1_snd_file(idx, snd_bytes):
+    # marker = snd_bytes[idx]
+    # idx += 1
+    # track_count = 0
+    # while marker != 0xff:
+    #     track_count += 1
+    #     channel_marker = snd_bytes[idx]
+    #     idx += 1
+    #     while channel_marker != 0xff:
+    #         idx += 5
+    #         channel_marker = snd_bytes[idx]
+    #         idx += 1
+    #     marker = snd_bytes[idx]
+    #     idx += 1
+    #
+    # #TODO ugly - get rid of previous code and the following line
+    # idx = 2
+    # for i in range(track_count):
+    #     track_type = snd_bytes[idx]
+    #     idx += 1
+    while True:
+        track_type = snd_bytes[idx]
+        idx += 1
+        if track_type != 0xf0:
+            idx += 2  # 2 unknown bytes, ignoring
+            data_offset = int.from_bytes(snd_bytes[idx:idx + 1], byteorder='little')
+            idx += 2
+            print('offset', data_offset)
+            size = int.from_bytes(snd_bytes[idx:idx + 1], byteorder='little')
+            idx += 2
+            print('size', size)
+            assert size > 0
+            # TODO have we already processed this channel?
+
+        else:
+            # digital track, not supported
+            idx += 6
+        print(f'closing channel. last byte is: {snd_bytes[idx]}')
+        idx += 1
+    # tracks = []
+    # while True:
+    #     type = snd_bytes[idx]
+    #     print(hex(type))
+    #     idx += 1
+    #     if type == 0xff:
+    #         break
+    #     if type == 0xf0:
+    #         # digitial track. not supported in ScummVM, skipping
+    #         idx += 6
+    #         print('skipping digital track')
+    #     else:
+    #         raise NotImplementedError
+    #         offset = int.from_bytes(snd_bytes[idx:idx + 1], byteorder='little')
+    #         idx + 2
+    #         print(offset)
+    #         size = int.from_bytes(snd_bytes[idx:idx + 3], byteorder='little')
+    #         print(size)
+    #         assert size > 0
+    midfile = read_messages(snd_bytes, 0x41a)
+    return midfile
 
 
 def read_input(input_file, input_version):
