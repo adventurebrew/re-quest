@@ -1,4 +1,6 @@
 # spec: https://wiki.scummvm.org/index.php/SCI/Specifications/Sound/SCI0_Resource_Format
+# SCI1+ additions from:
+# https://github.com/icefallgames/SCICompanion/blob/f1a603b48b1aa7abf94f78574a8f69a653e2ca62/SCICompanionLib/Src/Resources/Sound.cpp#L1483
 
 # TODO: read ancient snd format?
 # TODO: digital sample and channel
@@ -6,7 +8,6 @@
 # TODO: sci0: play only specific device
 # TODO: sci1: choose device to play/save_midi
 # TODO: sci0: write
-# TODO: sci1: write from arbitrary midi
 # TODO: verify cue, loop in writing (sound.200)
 
 
@@ -65,9 +66,10 @@ class SCI1_Devices(Enum):
 
 def get_sierra_delay_bytes(delay):
     result = b''
-    while delay > 240:
+    while delay >= 240:
         result += int.to_bytes(0xf8, length=1, byteorder='little')
         delay %= 240
+    assert delay <= 0xef
     result += int.to_bytes(delay, length=1, byteorder='little')
     return result
 
@@ -104,7 +106,7 @@ def read_messages(stream, size=None):
             while d == 0xf8:
                 delta += 240
                 d = read_le(stream)
-            assert d <= 0xe9
+            assert d <= 0xef
             delta += d
 
             # status
@@ -237,9 +239,6 @@ def read_sci1_snd_file(stream, info):
 
 
 def save_sci1(midfile, input_file):
-    if midfile.tracks[0].name != 'MIDI_SCI0_HEADER':
-        sys.exit('Currently not supporting such saving; contact Zvika, or open an issue')  # TODO
-
     devices = {}
     for msg in midfile.tracks[0]:
         if msg.type == 'device_name' and msg.name.startswith('Device '):
@@ -260,13 +259,6 @@ def save_sci1(midfile, input_file):
         msg.time = timer
         messages.append(msg)
 
-    header_size = sum([1  # track type
-                       + len(devices[d]) * 6  # (2 unknown, 2 offset, 2 size) for each channel
-                       + 1  # ending 0xff - no more channels
-                       for d in devices
-                       ]
-                      ) + 1  # ending 0xff - no more tracks
-
     channel_offsets = {}
     channel_sizes = {}
     channel_nums = sorted(list(set([m.channel for m in messages if not m.is_realtime and not m.is_meta])))
@@ -285,6 +277,21 @@ def save_sci1(midfile, input_file):
             channel_sizes[ch] = channels_stream.tell() - channel_offsets[ch]
         channels_bytes = channels_stream.getvalue()
 
+    if not devices:
+        print(
+            "Couldn't find devices information in first track; using arbitrary values. Contact Zvika if you wish to have control over this")
+        channels = [{'ch': ch + 1} for ch in channel_nums]
+        devices[SCI1_Devices.GM] = channels
+        devices[SCI1_Devices.ADLIB] = channels
+        devices[SCI1_Devices.SPEAKER] = [{'ch': channel_nums[0] + 1}]
+
+    header_size = sum([1  # track type
+                       + len(devices[d]) * 6  # (2 unknown, 2 offset, 2 size) for each channel
+                       + 1  # ending 0xff - no more channels
+                       for d in devices
+                       ]
+                      ) + 1  # ending 0xff - no more tracks
+
     output_file = input_file + ".snd"  # TODO let user control file name
     with open(output_file, 'wb') as f:
         f.write(SIERRA_SND_HEADER)
@@ -292,7 +299,7 @@ def save_sci1(midfile, input_file):
             write_le(f, device.value)
             device_channels = [c['ch'] - 1 for c in devices[device]]
             for channel in device_channels:
-                write_le(f, 0xcafe, 2)  # unknown
+                write_le(f, 0x0, 2)  # unknown
                 write_le(f, channel_offsets[channel] + header_size, 2)
                 write_le(f, channel_sizes[channel], 2)
             write_le(f, 0xff)
@@ -304,9 +311,9 @@ def save_sci1(midfile, input_file):
 
 def read_input(input_file, input_version, info):
     p = Path(input_file)
-    if p.suffix == '.mid':
+    if p.suffix.lower() == '.mid':
         return read_midi_file(p)
-    elif p.suffix == '.snd' or p.stem == 'sound':
+    elif p.suffix.lower() == '.snd' or p.stem == 'sound':
         return read_snd_file(p, input_version, info)
     else:
         raise NameError("Received illegal file: " + input_file)
