@@ -11,7 +11,7 @@ def force_english():
 
     def applyConfiguration(self):
         # don't take system language, but English
-        # TODO: need to open an issue or PR (for __init__)
+        # TODO: need to open an issue or PR (for __init__), use 'language' attribute
         self.locale = wx.Locale(wx.LANGUAGE_ENGLISH)
 
         # even with English, if the OS is RTL, the windows will be RTL - avoid this
@@ -41,10 +41,25 @@ def add_read_only_dropdown():
     gooey.gui.components.widgets.ReadOnlyDropdown = ReadOnlyDropdown
 
 
+gooey_enabled = True
+
+
 def run_gooey_only_if_no_args():
     # run GUI only if no arguments are supplied
     # taken from https://github.com/chriskiehl/Gooey/issues/449#issuecomment-534056010
     # hopefully, one day https://github.com/chriskiehl/Gooey/issues/296 will be fixed
     if len(sys.argv) >= 2:
+        global gooey_enabled
         if not '--ignore-gooey' in sys.argv:
+            gooey_enabled = False
             sys.argv.append('--ignore-gooey')
+
+
+def progress_bar_dont_display_remaining_time():
+    # the remaining time isn't accurate; better to not display it
+    # seems like it should be possible, but there is a bug in the official way
+    from gooey.gui.util import time
+    def estimate_time_remaining(progress, startTime):
+        return None
+
+    time.estimate_time_remaining = estimate_time_remaining

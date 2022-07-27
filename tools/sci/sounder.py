@@ -10,19 +10,18 @@
 # TODO: sci0: write
 # TODO: verify cue, loop in writing (sound.200)
 
-# TODO: info: length of midi file (also for midi)
 # TODO: info: channels (also for midi)
-
-# TODO: gui: show remaining time when playing
 # TODO: gui: menu
 
 
 import warnings
+import io
+import re
+import time
+import threading
 from pathlib import Path
 from enum import Flag, Enum
-import io
 from copy import deepcopy
-import re
 from ast import literal_eval
 
 import mido
@@ -315,11 +314,20 @@ def save_sci1(midfile, input_file):
 def read_input(input_file, input_version, info):
     p = Path(input_file)
     if p.suffix.lower() == '.mid':
-        return read_midi_file(p)
+        midifile = read_midi_file(p)
     elif p.suffix.lower() == '.snd' or p.stem == 'sound':
-        return read_snd_file(p, input_version, info)
+        midifile = read_snd_file(p, input_version, info)
     else:
         raise NameError("Received illegal file: " + input_file)
+    if info:
+        print(f"Length: {midifile.length:.1f} seconds")
+    return midifile
+
+
+def show_progress(length):
+    for i in range(round(length)):
+        time.sleep(1)
+        print(f'seconds: {i + 1}/{length}')
 
 
 def play(midfile, port=None, verbose=False):
@@ -328,6 +336,11 @@ def play(midfile, port=None, verbose=False):
     else:
         print(f'Using {port} for MIDI playback')
         port = mido.open_output(port)
+
+    if gooey_misc.gooey_enabled:
+        print(f'seconds: {0}/{round(midfile.length)}')
+        progress_thread = threading.Thread(target=show_progress, args=(midfile.length,))
+        progress_thread.start()
 
     for msg in midfile.play():
         if verbose:
@@ -365,9 +378,17 @@ def save_midi(midfile, input_file):
 gooey_misc.run_gooey_only_if_no_args()
 gooey_misc.add_read_only_dropdown()
 gooey_misc.force_english()
+gooey_misc.progress_bar_dont_display_remaining_time()
 
 
-@Gooey(clear_before_run=True)
+@Gooey(clear_before_run=True,
+       progress_regex=r"^seconds: (?P<current>.*)/(?P<total>.*)$",
+       progress_expr="current / total * 100",
+       hide_progress_msg=True,
+       timing_options={
+           'show_time_remaining': True,
+           'hide_time_remaining_on_complete': True,
+       })
 def main():
     parser = GooeyParser(description="Sierra SCI 'snd' manager - load, save and play",
                          epilog='GUI starts if no arguments are supplied')
