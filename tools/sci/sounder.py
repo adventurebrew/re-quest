@@ -15,7 +15,6 @@
 
 # TODO: gui: show remaining time when playing
 # TODO: gui: menu
-# TODO: gui: file chooser - left to right
 
 
 import warnings
@@ -365,6 +364,7 @@ def save_midi(midfile, input_file):
 
 gooey_misc.run_gooey_only_if_no_args()
 gooey_misc.add_read_only_dropdown()
+gooey_misc.force_english()
 
 
 @Gooey(clear_before_run=True)

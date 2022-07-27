@@ -5,11 +5,22 @@ import wx
 from gooey.gui.components.widgets.dropdown import Dropdown
 
 
-# note: I've locally modified
-# C:\Users\Zvika\anaconda3\envs\hebrew_adventure\Lib\site-packages\gooey\gui\containers\application.py
-# added in init()
-#       self.SetLayoutDirection(wx.Layout_LeftToRight)
-# waiting for https://github.com/chriskiehl/Gooey/pull/682
+def force_english():
+    from gooey.gui.containers.application import GooeyApplication
+    orig_applyConfiguration = GooeyApplication.applyConfiguration
+
+    def applyConfiguration(self):
+        # don't take system language, but English
+        # TODO: need to open an issue or PR (for __init__)
+        self.locale = wx.Locale(wx.LANGUAGE_ENGLISH)
+
+        # even with English, if the OS is RTL, the windows will be RTL - avoid this
+        # based on https://github.com/chriskiehl/Gooey/pull/682/files
+        self.SetLayoutDirection(wx.Layout_LeftToRight)
+
+        orig_applyConfiguration(self)
+
+    GooeyApplication.applyConfiguration = applyConfiguration
 
 
 def add_read_only_dropdown():
@@ -37,5 +48,3 @@ def run_gooey_only_if_no_args():
     if len(sys.argv) >= 2:
         if not '--ignore-gooey' in sys.argv:
             sys.argv.append('--ignore-gooey')
-
-# wx.Locale(wx.LANGUAGE_ENGLISH)
