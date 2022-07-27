@@ -2,7 +2,7 @@
 # SCI1+ additions from:
 # https://github.com/icefallgames/SCICompanion/blob/f1a603b48b1aa7abf94f78574a8f69a653e2ca62/SCICompanionLib/Src/Resources/Sound.cpp#L1483
 
-# TODO: read ancient snd format?
+# TODO: read ancient snd format
 # TODO: digital sample and channel
 # TODO: The MT-32 always plays channel 9, the MIDI percussion channel, regardless of whether or not the channel is flagged for the device. Other MIDI devices may also do this.
 # TODO: sci0: play only specific device
@@ -10,20 +10,28 @@
 # TODO: sci0: write
 # TODO: verify cue, loop in writing (sound.200)
 
+# TODO: info: length of midi file (also for midi)
+# TODO: info: channels (also for midi)
 
-import argparse
+# TODO: gui: show remaining time when playing
+# TODO: gui: menu
+# TODO: gui: file chooser - left to right
+
+
 import warnings
 from pathlib import Path
 from enum import Flag, Enum
 import io
 from copy import deepcopy
-import sys
 import re
 from ast import literal_eval
 
 import mido
 import rtmidi  # pip install python-rtmidi
 from mido import MidiFile, MidiTrack
+from gooey import Gooey, GooeyParser
+
+import gooey_misc
 
 SIERRA_SND_HEADER = b'\x84\0'
 NUM_OF_CHANNELS = 16
@@ -72,10 +80,6 @@ def get_sierra_delay_bytes(delay):
     assert delay <= 0xef
     result += int.to_bytes(delay, length=1, byteorder='little')
     return result
-
-
-def show_ports():
-    print(mido.get_output_names())
 
 
 def get_event_length(status):
@@ -323,8 +327,8 @@ def play(midfile, port=None, verbose=False):
     if port is None:
         port = mido.open_output()
     else:
-        print(f'Using {args.port} for MIDI playback')
-        port = mido.open_output(args.port)
+        print(f'Using {port} for MIDI playback')
+        port = mido.open_output(port)
 
     for msg in midfile.play():
         if verbose:
@@ -359,26 +363,29 @@ def save_midi(midfile, input_file):
     print("Saved " + filename)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                     description="Sierra SCI 'snd' manager - export, import and play")
-    parser.add_argument("input_file", help="input file to handle (either SCI: 'sound.*', '*.snd', or MIDI: '*.mid')")
+gooey_misc.run_gooey_only_if_no_args()
+gooey_misc.add_read_only_dropdown()
+
+
+@Gooey(clear_before_run=True)
+def main():
+    parser = GooeyParser(description="Sierra SCI 'snd' manager - load, save and play",
+                         epilog='GUI starts if no arguments are supplied')
+    parser.add_argument("input_file", help="input file to handle (either SCI: 'sound.*', '*.snd', or MIDI: '*.mid')",
+                        widget="FileChooser")
     parser.add_argument("--input_version", "-i", choices=['SCI0_EARLY', 'SCI0', 'SCI1+'], default='SCI0',
-                        help="sound format version. ")
+                        help="sound format version. ", widget='ReadOnlyDropdown')
     parser.add_argument("--play", "-p", action='store_true', help="play the input file")
     parser.add_argument("--verbose", "-v", action='store_true', help="show midi messages as they are played")
     parser.add_argument("--info", "-f", action='store_true', help="prints info about the file")
     parser.add_argument("--save_midi", "-m", action='store_true', help="save as .mid file")
     parser.add_argument("--save_sci1", "-1", action='store_true', help="save as .snd SCI1+ file")
-    parser.add_argument("--show_ports", "-s", action='store_true', help="show available MIDI ports")
-    parser.add_argument("--port", "-t", help="select MIDI port to use, instead of the default one")
+    parser.add_argument("--port", "-t", choices=mido.get_output_names(), widget="ReadOnlyDropdown",
+                        help="select MIDI port to use, instead of the default one")
     args = parser.parse_args()
 
     if args.input_version == 'SCI0_EARLY':
         raise NotImplementedError("Early SCI0 isn't implemented yet. Contact Zvika, or raise an issue if you need this")
-
-    if args.show_ports:
-        show_ports()
 
     midfile = read_input(args.input_file, args.input_version, args.info)
 
@@ -390,3 +397,7 @@ if __name__ == "__main__":
 
     if args.play:
         play(midfile, args.port, args.verbose)
+
+
+if __name__ == "__main__":
+    main()
