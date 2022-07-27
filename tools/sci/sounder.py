@@ -12,6 +12,7 @@
 
 # TODO: info: channels (also for midi)
 # TODO: gui: menu
+# TODO: pyinstaller
 
 
 import warnings
@@ -388,21 +389,32 @@ gooey_misc.progress_bar_dont_display_remaining_time()
        timing_options={
            'show_time_remaining': True,
            'hide_time_remaining_on_complete': True,
-       })
+       },
+       default_size=(600, 800),
+       program_description="Sierra SCI 'snd' manager - load, save and play\n(run with '--help' for command line interface)")
 def main():
     parser = GooeyParser(description="Sierra SCI 'snd' manager - load, save and play",
                          epilog='GUI starts if no arguments are supplied')
-    parser.add_argument("input_file", help="input file to handle (either SCI: 'sound.*', '*.snd', or MIDI: '*.mid')",
-                        widget="FileChooser")
-    parser.add_argument("--input_version", "-i", choices=['SCI0_EARLY', 'SCI0', 'SCI1+'], default='SCI0',
-                        help="sound format version. ", widget='ReadOnlyDropdown')
-    parser.add_argument("--play", "-p", action='store_true', help="play the input file")
-    parser.add_argument("--verbose", "-v", action='store_true', help="show midi messages as they are played")
-    parser.add_argument("--info", "-f", action='store_true', help="prints info about the file")
-    parser.add_argument("--save_midi", "-m", action='store_true', help="save as .mid file")
-    parser.add_argument("--save_sci1", "-1", action='store_true', help="save as .snd SCI1+ file")
-    parser.add_argument("--port", "-t", choices=mido.get_output_names(), widget="ReadOnlyDropdown",
-                        help="select MIDI port to use, instead of the default one")
+
+    input_group = parser.add_argument_group("Input Options", )
+    input_group.add_argument("input_file",
+                             help="input file to load\neither SCI ('sound.*', '*.snd'), or MIDI ('*.mid')",
+                             widget="FileChooser")
+    input_group.add_argument("--input_version", "-i", choices=['SCI0_EARLY', 'SCI0', 'SCI1+'], default='SCI0',
+                             help="sound format version. ", widget='ReadOnlyDropdown')
+
+    play_group = parser.add_argument_group("Play Options", )
+    play_group.add_argument("--play", "-p", action='store_true', help="play the input file")
+    play_group.add_argument("--verbose", "-v", action='store_true', help="show midi messages as they are played")
+    play_group.add_argument("--port", "-t", choices=mido.get_output_names(), widget="ReadOnlyDropdown",
+                            help="select MIDI port to use, instead of the default one")
+
+    save_group = parser.add_argument_group("Save Options", )
+    save_group.add_argument("--save_midi", "-m", action='store_true', help="save as .mid file")
+    save_group.add_argument("--save_sci1", "-1", action='store_true', help="save as .snd SCI1+ file")
+
+    misc_group = parser.add_argument_group("Miscellaneous Options", )
+    misc_group.add_argument("--info", "-f", action='store_true', help="print info about the file")
     args = parser.parse_args()
 
     if args.input_version == 'SCI0_EARLY':
