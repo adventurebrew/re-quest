@@ -2,8 +2,6 @@
 # SCI1+ additions from:
 # https://github.com/icefallgames/SCICompanion/blob/f1a603b48b1aa7abf94f78574a8f69a653e2ca62/SCICompanionLib/Src/Resources/Sound.cpp#L1483
 
-# TODO: debug warning in KQ4 sound.001 saved as SCI1
-
 # TODO: digital sample and channel
 # TODO: The MT-32 always plays channel 9, the MIDI percussion channel, regardless of whether or not the channel is flagged for the device. Other MIDI devices may also do this.
 # TODO: sci0: play only specific device
@@ -137,7 +135,7 @@ def read_messages(stream, size=None):
                 track.append(msg)
             except ValueError as e:
                 print(e)
-                print('value error. previous status: ' + hex(status) + ". " + event.hex())
+                print('value error. status: ' + hex(status) + ". event: " + event.hex())
     except EOFError:
         pass
 
@@ -258,7 +256,7 @@ def read_sci1_snd_file(stream, info):
             poly_and_prio = read_le(stream)
             poly = poly_and_prio % 16
             prio = poly_and_prio >> 4
-            midtrack = read_messages(stream, channel['size'])
+            midtrack = read_messages(stream, channel['size'] - 2)  # we already read channel_number, poly_and_prio
             midfile.tracks.append(midtrack)
 
     return midfile
@@ -275,7 +273,7 @@ def save_sci1(midfile, input_file, save_file):
                     channels = literal_eval(m.group(2))
                     devices[device] = channels
                 except KeyError:
-                    print("Ignoring device " + m.group(1))
+                    print(f"SAVE SCI1+: Ignoring device {m.group(1)}, doesn't have a SCI1 counterpart")
 
     # unify all messages from all tracks; change time from delta to absolute
     messages = []
@@ -292,12 +290,16 @@ def save_sci1(midfile, input_file, save_file):
         for ch in channel_nums:
             timer = 0
             channel_offsets[ch] = channels_stream.tell()
+            # print('ch', ch, end='\t')
             write_le(channels_stream, ch)  # TODO flags
+            # print('poly_prio', 1, end='\t')
             write_le(channels_stream, 0x1)  # TODO poly and prio
             for msg in messages:
                 if not msg.is_meta and (msg.is_realtime or msg.channel == ch):
                     delta = msg.time - timer
                     timer = msg.time
+                    # print('delay', get_sierra_delay_bytes(delta).hex())
+                    # print('msg', msg.bin().hex())
                     channels_stream.write(get_sierra_delay_bytes(delta))
                     channels_stream.write(msg.bin())
             channel_sizes[ch] = channels_stream.tell() - channel_offsets[ch]
