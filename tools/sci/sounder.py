@@ -2,19 +2,22 @@
 # SCI1+ additions from:
 # https://github.com/icefallgames/SCICompanion/blob/f1a603b48b1aa7abf94f78574a8f69a653e2ca62/SCICompanionLib/Src/Resources/Sound.cpp#L1483
 
-# TODO: read ancient snd format
+# TODO: debug warning in KQ4 sound.001 saved as SCI1
+
 # TODO: digital sample and channel
 # TODO: The MT-32 always plays channel 9, the MIDI percussion channel, regardless of whether or not the channel is flagged for the device. Other MIDI devices may also do this.
 # TODO: sci0: play only specific device
 # TODO: sci1: choose device to play/save_midi
 # TODO: sci0: write
+# TODO: sci0_early: write
 # TODO: verify cue, loop in writing (sound.200)
+# TODO: save name
 
 # TODO: info: channels (also for midi)
-# TODO: gui: menu
+# TODO: gui: menu?
 # TODO: pyinstaller
 
-
+import sys
 import warnings
 import io
 import re
@@ -46,6 +49,14 @@ def read_le(stream, length=1):
 
 def write_le(stream, data, length=1):
     stream.write(data.to_bytes(length=length, byteorder='little'))
+
+
+class SCI0_Early_Devices(Flag):
+    ADLIB = 0x01
+    PC_JR = 0x02
+    SPEAKER = 0x04  # my educated guess; haven't seen it anywhere else
+    CONTROL_CHANNEL = 0x08
+    MT_32 = 0x80000  # it's not a Sierra value! In Sierra, MT_32 always responded
 
 
 class SCI0_Devices(Flag):
@@ -138,25 +149,36 @@ def read_snd_file(p, input_version, info):
     stream = io.BytesIO(p.read_bytes())
     assert stream.read(2) == SIERRA_SND_HEADER
     stream = io.BytesIO(stream.read())  # chop the first 2 bytes - it's only confusing for offsets
-    if input_version == 'SCI0':
-        return read_sci0_snd_file(stream, info)
+    if input_version.startswith('SCI0'):
+        return read_sci0_snd_file(stream, input_version == 'SCI0_EARLY', info)
     elif input_version == 'SCI1+':
         return read_sci1_snd_file(stream, info)
     else:
         raise NotImplementedError
 
 
-def read_sci0_snd_file(stream, info):
+def read_sci0_snd_file(stream, sci0_early, info):
     digital_sample = read_le(stream)
     if digital_sample != 0:
         warnings.warn(
             "Sound file has a digital sample; currently not supported and ignored. Contact Zvika, or raise an issue")
     devices = {}
     for ch in range(NUM_OF_CHANNELS):
-        voices = read_le(stream)
-        hardware = SCI0_Devices(read_le(stream))
+        if sci0_early:
+            b = read_le(stream)
+            voices = b // 16
+            hardware = SCI0_Early_Devices(b % 16)
+            hardware |= SCI0_Early_Devices.MT_32
+            if SCI0_Early_Devices.ADLIB in hardware and SCI0_Early_Devices.CONTROL_CHANNEL in hardware:
+                # according to Ravi's spec, and ScummVM adlib driver, ADLIB ignores the channel if it's also a CONTROL
+                hardware &= ~SCI0_Early_Devices.ADLIB
+            possible_devices = SCI0_Early_Devices
+        else:
+            voices = read_le(stream)
+            hardware = SCI0_Devices(read_le(stream))
+            possible_devices = SCI0_Devices
         if hardware:
-            for device in SCI0_Devices:
+            for device in possible_devices:
                 if device in hardware:
                     channels = devices.get(device, [])
                     channels.append({'ch': ch + 1, 'voices': voices})
@@ -169,6 +191,8 @@ def read_sci0_snd_file(stream, info):
         info_track.append(mido.MetaMessage(type='device_name', name=f'Device {device.name} uses {devices[device]}'))
         if info:
             print(f'Device {device.name} uses {devices[device]}')
+    if len(devices.get(SCI0_Devices.SPEAKER, [])) > 1:
+        sys.exit("\nERROR: Speaker has more than 1 channel; probably SCI sound version mismatch or corrupted file")
     midfile.tracks.append(info_track)
 
     track = read_messages(stream)
@@ -382,6 +406,9 @@ gooey_misc.force_english()
 gooey_misc.progress_bar_dont_display_remaining_time()
 
 
+# gooey_misc.args_replace_underscore_with_spaces()  # TODO: it makes FileChooser to ignore wildcards
+
+
 @Gooey(clear_before_run=True,
        progress_regex=r"^seconds: (?P<current>.*)/(?P<total>.*)$",
        progress_expr="current / total * 100",
@@ -399,7 +426,13 @@ def main():
     input_group = parser.add_argument_group("Input Options", )
     input_group.add_argument("input_file",
                              help="input file to load\neither SCI ('sound.*', '*.snd'), or MIDI ('*.mid')",
-                             widget="FileChooser")
+                             widget="FileChooser", gooey_options={
+            'wildcard':
+                'All supported files (*.snd;sound.*;*.mid)|*.snd;sound.*;*.mid|'
+                'Sierra Sound files (*.snd;sound.*)|*.snd;sound.*|'
+                'Midi Files (*.mid)|*.mid|'
+                'All Files (*.*)|*.*',
+        })
     input_group.add_argument("--input_version", "-i", choices=['SCI0_EARLY', 'SCI0', 'SCI1+'], default='SCI0',
                              help="sound format version. ", widget='ReadOnlyDropdown')
 
@@ -410,15 +443,22 @@ def main():
                             help="select MIDI port to use, instead of the default one")
 
     save_group = parser.add_argument_group("Save Options", )
-    save_group.add_argument("--save_midi", "-m", action='store_true', help="save as .mid file")
-    save_group.add_argument("--save_sci1", "-1", action='store_true', help="save as .snd SCI1+ file")
+    save_type_group = save_group.add_mutually_exclusive_group(gooey_options={
+        'title': 'Save as',
+        'initial_selection': 0,
+    })
+    save_type_group.add_argument("--dont_save", action='store_true', help="don't save (default)", )
+    save_type_group.add_argument("--save_midi", "-m", action='store_true', help="save as .mid file")
+    save_type_group.add_argument("--save_sci1", "-1", action='store_true', help="save as .snd SCI1+ file")
+    save_group.add_argument("--save_file",
+                            help="saved file name (default: original name + 'snd' or + 'midi)",
+                            widget="FileSaver")
 
     misc_group = parser.add_argument_group("Miscellaneous Options", )
-    misc_group.add_argument("--info", "-f", action='store_true', help="print info about the file")
+    misc_group.add_argument("--info", "-f", action='store_true', help="print info about the file", gooey_options={
+        'initial_value': True
+    })
     args = parser.parse_args()
-
-    if args.input_version == 'SCI0_EARLY':
-        raise NotImplementedError("Early SCI0 isn't implemented yet. Contact Zvika, or raise an issue if you need this")
 
     midfile = read_input(args.input_file, args.input_version, args.info)
 

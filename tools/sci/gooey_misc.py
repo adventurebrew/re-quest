@@ -1,10 +1,22 @@
 import sys
+import warnings
 
 import gooey
 import wx
 from gooey.gui.components.widgets.dropdown import Dropdown
 
 
+def protected_func(func):
+    def wrapper():
+        try:
+            func()
+        except Exception as exception:
+            warnings.warn(exception)
+
+    return wrapper
+
+
+@protected_func
 def force_english():
     from gooey.gui.containers.application import GooeyApplication
     orig_applyConfiguration = GooeyApplication.applyConfiguration
@@ -23,6 +35,7 @@ def force_english():
     GooeyApplication.applyConfiguration = applyConfiguration
 
 
+@protected_func
 def add_read_only_dropdown():
     # bypass until https://github.com/chriskiehl/Gooey/issues/828 will be fixed
 
@@ -44,6 +57,7 @@ def add_read_only_dropdown():
 gooey_enabled = True
 
 
+@protected_func
 def run_gooey_only_if_no_args():
     # run GUI only if no arguments are supplied
     # taken from https://github.com/chriskiehl/Gooey/issues/449#issuecomment-534056010
@@ -55,6 +69,7 @@ def run_gooey_only_if_no_args():
             sys.argv.append('--ignore-gooey')
 
 
+@protected_func
 def progress_bar_dont_display_remaining_time():
     # the remaining time isn't accurate; better to not display it
     # seems like it should be possible, but there is a bug in the official way
@@ -63,3 +78,15 @@ def progress_bar_dont_display_remaining_time():
         return None
 
     time.estimate_time_remaining = estimate_time_remaining
+
+
+@protected_func
+def args_replace_underscore_with_spaces():
+    from gooey.python_bindings import argparse_to_json
+    orig_action_to_json = argparse_to_json.action_to_json
+
+    def action_to_json(action, widget, options):
+        action.dest = action.dest.replace('_', ' ')
+        return orig_action_to_json(action, widget, options)
+
+    argparse_to_json.action_to_json = action_to_json
