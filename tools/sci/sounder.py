@@ -11,7 +11,6 @@
 # TODO: sci0: write
 # TODO: sci0_early: write
 # TODO: verify cue, loop in writing (sound.200)
-# TODO: save name
 
 # TODO: info: channels (also for midi)
 # TODO: gui: menu?
@@ -265,7 +264,7 @@ def read_sci1_snd_file(stream, info):
     return midfile
 
 
-def save_sci1(midfile, input_file):
+def save_sci1(midfile, input_file, save_file):
     devices = {}
     for msg in midfile.tracks[0]:
         if msg.type == 'device_name' and msg.name.startswith('Device '):
@@ -319,8 +318,9 @@ def save_sci1(midfile, input_file):
                        ]
                       ) + 1  # ending 0xff - no more tracks
 
-    output_file = input_file + ".snd"  # TODO let user control file name
-    with open(output_file, 'wb') as f:
+    if not save_file:
+        save_file = input_file + ".snd"
+    with open(save_file, 'wb') as f:
         f.write(SIERRA_SND_HEADER)
         for device in devices:
             write_le(f, device.value)
@@ -333,7 +333,7 @@ def save_sci1(midfile, input_file):
         write_le(f, 0xff)
         assert f.tell() == 2 + header_size  # 2 is the SIERRA_SND_HEADER
         f.write(channels_bytes)
-    print(f'Saved {output_file}')
+    print(f'Saved {save_file}')
 
 
 def read_input(input_file, input_version, info):
@@ -386,7 +386,7 @@ def read_midi_file(p):
     return midfile
 
 
-def save_midi(midfile, input_file):
+def save_midi(midfile, input_file, save_file):
     midfile_copy = deepcopy(midfile)
     for track in midfile_copy.tracks:
         for i, msg in enumerate(track):
@@ -395,9 +395,10 @@ def save_midi(midfile, input_file):
                     (msg.type == 'control_change' and msg.control == 0x60):
                 track[i] = mido.MetaMessage(type='text', text=str(msg))
 
-    filename = input_file + ".mid"
-    midfile_copy.save(filename)
-    print("Saved " + filename)
+    if not save_file:
+        save_file = input_file + ".mid"
+    midfile_copy.save(save_file)
+    print("Saved " + save_file)
 
 
 gooey_misc.run_gooey_only_if_no_args()
@@ -463,10 +464,10 @@ def main():
     midfile = read_input(args.input_file, args.input_version, args.info)
 
     if args.save_midi:
-        save_midi(midfile, args.input_file)
+        save_midi(midfile, args.input_file, args.save_file)
 
     if args.save_sci1:
-        save_sci1(midfile, args.input_file)
+        save_sci1(midfile, args.input_file, args.save_file)
 
     if args.play:
         play(midfile, args.port, args.verbose)
