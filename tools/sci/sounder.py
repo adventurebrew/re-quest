@@ -2,15 +2,19 @@
 # SCI1+ additions from:
 # https://github.com/icefallgames/SCICompanion/blob/f1a603b48b1aa7abf94f78574a8f69a653e2ca62/SCICompanionLib/Src/Resources/Sound.cpp#L1483
 
-# TODO: digital sample and channel
+# TODO: sci1: read digital sample
+# TODO: sci1: write digital sample
 # TODO: The MT-32 always plays channel 9, the MIDI percussion channel, regardless of whether or not the channel is flagged for the device. Other MIDI devices may also do this.
 # TODO: sci0: play only specific device
 # TODO: sci1: choose device to play/save_midi
-# TODO: sci0: write
+# TODO: sci0: write (regular + digital)
 # TODO: sci0_early: write
 # TODO: verify cue, loop in writing (sound.200)
+# TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
 
+# TODO: logging ; add info logging for sci0 digital offset not zero
 # TODO: info: channels (also for midi)
+# TODO: early: register mt_32 only for existing channels
 # TODO: gui: menu?
 # TODO: pyinstaller
 
@@ -24,10 +28,13 @@ from pathlib import Path
 from enum import Flag, Enum
 from copy import deepcopy
 from ast import literal_eval
+import wave
 
 import mido
 import rtmidi  # pip install python-rtmidi
 from mido import MidiFile, MidiTrack
+import pyaudio
+
 from gooey import Gooey, GooeyParser
 
 import gooey_misc
@@ -42,6 +49,13 @@ def read_le(stream, length=1):
     if b == b'':
         raise EOFError
     return int.from_bytes(b, byteorder='little')
+
+
+def read_be(stream, length=1):
+    b = stream.read(length)
+    if b == b'':
+        raise EOFError
+    return int.from_bytes(b, byteorder='big')
 
 
 def write_le(stream, data, length=1):
@@ -154,34 +168,91 @@ def read_snd_file(p, input_version, info):
         raise NotImplementedError
 
 
+def find_last_non_digital_offset(stream):
+    # the digital header will come after one or two 0xfc (stop)
+    orig_location = stream.tell()
+    while read_le(stream) != 0xfc:
+        pass
+    while read_le(stream) == 0xfc:
+        pass
+    # now we're exactly one byte after the beginning of the header
+    # the last non digital byte is one byte before the beginning of the header
+    result = stream.tell() - 2
+    stream.seek(orig_location, io.SEEK_SET)
+    return result
+
+
+def read_sci0_digital(stream, info):
+    # we don't know the meaning of most of the 44 bytes header
+    read_le(stream, 14)  # waste offsets 0-13
+    freq = read_le(stream, 2)  # read offset 14,15
+    read_le(stream, 16)  # waste offsets 16-31
+    length = read_le(stream, 2)  # read offset 32,33
+    read_le(stream, 10) # waste offsets 34-43
+    if info:
+        print(f'Digital sample - freq: {freq} Hz, length: {length/freq:.1f} sec ({length} bytes)')
+    data = stream.read(length)
+    return {'freq': freq, 'data': data}
+
+
+def play_wave(wave):
+    audio = pyaudio.PyAudio()
+    stream = audio.open(format=audio.get_format_from_width(1),
+                        channels=1,
+                        rate=wave['freq'],
+                        output=True)
+    stream.write(wave['data'])
+    stream.stop_stream()
+    stream.close()
+    audio.terminate()
+
+
+def save_wave(data, freq, filename):
+    with wave.open(filename, 'wb') as w:
+        w.setnchannels(1)
+        w.setsampwidth(1)
+        w.setframerate(freq)
+        w.writeframes(data)
+
+
 def read_sci0_snd_file(stream, sci0_early, info):
-    digital_sample = read_le(stream)
-    if digital_sample != 0:
-        warnings.warn(
-            "Sound file has a digital sample; currently not supported and ignored. Contact Zvika, or raise an issue")
+    digital_sample_byte = read_le(stream)
+    if digital_sample_byte == 0:
+        has_digital_sample = False
+    elif digital_sample_byte == 2:
+        has_digital_sample = True
+    else:
+        warnings.warn(f"File has unrecognizable digital sample byte: {digital_sample_byte}")
+        has_digital_sample = False
+
     devices = {}
     for ch in range(NUM_OF_CHANNELS):
-        if sci0_early:
-            b = read_le(stream)
-            voices = b // 16
-            hardware = SCI0_Early_Devices(b % 16)
-            hardware |= SCI0_Early_Devices.MT_32
-            if SCI0_Early_Devices.ADLIB in hardware and SCI0_Early_Devices.CONTROL_CHANNEL in hardware:
-                # according to Ravi's spec, and ScummVM adlib driver, ADLIB ignores the channel if it's also a CONTROL
-                hardware &= ~SCI0_Early_Devices.ADLIB
-            possible_devices = SCI0_Early_Devices
+        if has_digital_sample and ch == NUM_OF_CHANNELS - 1:
+            last_non_digital_offset = read_be(stream, 2)  # note the big endian
+            if last_non_digital_offset == 0:
+                last_non_digital_offset = find_last_non_digital_offset(stream)
         else:
-            voices = read_le(stream)
-            hardware = SCI0_Devices(read_le(stream))
-            possible_devices = SCI0_Devices
-        if hardware:
-            for device in possible_devices:
-                if device in hardware:
-                    channels = devices.get(device, [])
-                    channels.append({'ch': ch + 1, 'voices': voices})
-                    devices[device] = channels
+            if sci0_early:
+                b = read_le(stream)
+                voices = b // 16
+                hardware = SCI0_Early_Devices(b % 16)
+                hardware |= SCI0_Early_Devices.MT_32
+                if SCI0_Early_Devices.ADLIB in hardware and SCI0_Early_Devices.CONTROL_CHANNEL in hardware:
+                    # according to Ravi's spec, and ScummVM adlib driver, ADLIB ignores the channel if it's also a CONTROL
+                    hardware &= ~SCI0_Early_Devices.ADLIB
+                possible_devices = SCI0_Early_Devices
+            else:
+                voices = read_le(stream)
+                hardware = SCI0_Devices(read_le(stream))
+                possible_devices = SCI0_Devices
+            if hardware:
+                for device in possible_devices:
+                    if device in hardware:
+                        channels = devices.get(device, [])
+                        channels.append({'ch': ch + 1, 'voices': voices})
+                        devices[device] = channels
 
-    midfile = MidiFile(ticks_per_beat=TICKS_PER_BIT)
+    midifile = MidiFile(ticks_per_beat=TICKS_PER_BIT)
     info_track = MidiTrack()
     info_track.append(mido.MetaMessage(type='track_name', name='MIDI_SCI0_HEADER'))
     for device in devices:
@@ -190,16 +261,21 @@ def read_sci0_snd_file(stream, sci0_early, info):
             print(f'Device {device.name} uses {devices[device]}')
     if len(devices.get(SCI0_Devices.SPEAKER, [])) > 1:
         sys.exit("\nERROR: Speaker has more than 1 channel; probably SCI sound version mismatch or corrupted file")
-    midfile.tracks.append(info_track)
+    midifile.tracks.append(info_track)
 
-    track = read_messages(stream)
-    midfile.tracks.append(track)
+    if has_digital_sample:
+        track = read_messages(stream, last_non_digital_offset - stream.tell() + 1)
+        wave = read_sci0_digital(stream, info)
+    else:
+        track = read_messages(stream)
+        wave = None
+    midifile.tracks.append(track)
 
-    return midfile
+    return {'midifile': midifile, 'wave': wave}
 
 
 def read_sci1_snd_file(stream, info):
-    midfile = MidiFile(ticks_per_beat=TICKS_PER_BIT)
+    midifile = MidiFile(ticks_per_beat=TICKS_PER_BIT)
     device_tracks = {}
     while True:
         track_type = read_le(stream)
@@ -257,14 +333,14 @@ def read_sci1_snd_file(stream, info):
             poly = poly_and_prio % 16
             prio = poly_and_prio >> 4
             midtrack = read_messages(stream, channel['size'] - 2)  # we already read channel_number, poly_and_prio
-            midfile.tracks.append(midtrack)
+            midifile.tracks.append(midtrack)
 
-    return midfile
+    return {'midifile': midifile, 'wave': None}
 
 
-def save_sci1(midfile, input_file, save_file):
+def save_sci1(midifile, input_file, save_file):
     devices = {}
-    for msg in midfile.tracks[0]:
+    for msg in midifile.tracks[0]:
         if msg.type == 'device_name' and msg.name.startswith('Device '):
             m = re.match(r'Device (.*) uses (\[.*)', msg.name)
             if m:
@@ -278,7 +354,7 @@ def save_sci1(midfile, input_file, save_file):
     # unify all messages from all tracks; change time from delta to absolute
     messages = []
     timer = 0
-    for msg in mido.merge_tracks(midfile.tracks):
+    for msg in mido.merge_tracks(midifile.tracks):
         timer += msg.time
         msg.time = timer
         messages.append(msg)
@@ -342,13 +418,14 @@ def read_input(input_file, input_version, info):
     p = Path(input_file)
     if p.suffix.lower() == '.mid':
         midifile = read_midi_file(p)
-    elif p.suffix.lower() == '.snd' or p.stem == 'sound':
-        midifile = read_snd_file(p, input_version, info)
+        result = {'midifile': midifile, 'wave': None}
+    elif p.suffix.lower() == '.snd' or p.stem.startswith('sound'):
+        result = read_snd_file(p, input_version, info)
     else:
-        raise NameError("Received illegal file: " + input_file)
+        raise NameError("Received unsupported file (it should start with sound. or end with .mid/.snd) " + input_file)
     if info:
-        print(f"Length: {midifile.length:.1f} seconds")
-    return midifile
+        print(f"Midi length: {result['midifile'].length:.1f} seconds")
+    return result
 
 
 def show_progress(length):
@@ -357,7 +434,7 @@ def show_progress(length):
         print(f'seconds: {i + 1}/{length}')
 
 
-def play(midfile, port=None, verbose=False):
+def play_midi(midifile, port=None, verbose=False):
     if port is None:
         port = mido.open_output()
     else:
@@ -365,19 +442,19 @@ def play(midfile, port=None, verbose=False):
         port = mido.open_output(port)
 
     if gooey_misc.gooey_enabled:
-        print(f'seconds: {0}/{round(midfile.length)}')
-        progress_thread = threading.Thread(target=show_progress, args=(midfile.length,))
+        print(f'seconds: {0}/{round(midifile.length)}')
+        progress_thread = threading.Thread(target=show_progress, args=(midifile.length,))
         progress_thread.start()
 
-    for msg in midfile.play():
+    for msg in midifile.play():
         if verbose:
             print(msg)
         port.send(msg)
 
 
 def read_midi_file(p):
-    midfile = MidiFile(p)
-    for track in midfile.tracks:
+    midifile = MidiFile(p)
+    for track in midifile.tracks:
         for i, msg in enumerate(track):
             if msg.is_meta and msg.type == 'text':
                 try:
@@ -385,12 +462,12 @@ def read_midi_file(p):
                 except:
                     pass
 
-    return midfile
+    return midifile
 
 
-def save_midi(midfile, input_file, save_file):
-    midfile_copy = deepcopy(midfile)
-    for track in midfile_copy.tracks:
+def save_midi(midifile, input_file, save_file):
+    midifile_copy = deepcopy(midifile)
+    for track in midifile_copy.tracks:
         for i, msg in enumerate(track):
             if msg.is_realtime or \
                     (msg.type == 'program_change' and msg.channel == 15) or \
@@ -399,7 +476,7 @@ def save_midi(midfile, input_file, save_file):
 
     if not save_file:
         save_file = input_file + ".mid"
-    midfile_copy.save(save_file)
+    midifile_copy.save(save_file)
     print("Saved " + save_file)
 
 
@@ -463,16 +540,17 @@ def main():
     })
     args = parser.parse_args()
 
-    midfile = read_input(args.input_file, args.input_version, args.info)
+    midi_wave = read_input(args.input_file, args.input_version, args.info)
 
     if args.save_midi:
-        save_midi(midfile, args.input_file, args.save_file)
+        save_midi(midi_wave['midifile'], args.input_file, args.save_file)
 
     if args.save_sci1:
-        save_sci1(midfile, args.input_file, args.save_file)
+        save_sci1(midi_wave, args.input_file, args.save_file)
 
     if args.play:
-        play(midfile, args.port, args.verbose)
+        play_midi(midi_wave['midifile'], args.port, args.verbose)
+        play_wave(midi_wave['wave'])
 
 
 if __name__ == "__main__":
