@@ -2,7 +2,6 @@
 # SCI1+ additions from:
 # https://github.com/icefallgames/SCICompanion/blob/f1a603b48b1aa7abf94f78574a8f69a653e2ca62/SCICompanionLib/Src/Resources/Sound.cpp#L1483
 
-# TODO: sci1: read digital sample
 # TODO: sci1: write digital sample
 # TODO: The MT-32 always plays channel 9, the MIDI percussion channel, regardless of whether or not the channel is flagged for the device. Other MIDI devices may also do this.
 # TODO: sci0: play only specific device
@@ -12,6 +11,8 @@
 # TODO: verify cue, loop in writing (sound.200)
 # TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
 
+# TODO: input_version: auto detect
+# TODO: gooey: update widgets from each other (file chosen - change devices to play)
 # TODO: logging ; add info logging for sci0 digital offset not zero
 # TODO: info: channels (also for midi)
 # TODO: early: register mt_32 only for existing channels
@@ -91,6 +92,13 @@ class SCI1_Devices(Enum):
     MT_32 = 0x0c
     SPEAKER = 0x12
     PC_JR = 0x13
+    UNKNOWN3 = 0x16  # eco quest, 185.snd
+    UNKNOWN = 0xffff
+
+    @classmethod
+    def _missing_(cls, number):
+        warnings.warn(f"Encountered new unknown SCI1 device {hex(number)}")
+        return cls(cls.UNKNOWN)
 
 
 def get_sierra_delay_bytes(delay):
@@ -188,31 +196,48 @@ def read_sci0_digital(stream, info):
     freq = read_le(stream, 2)  # read offset 14,15
     read_le(stream, 16)  # waste offsets 16-31
     length = read_le(stream, 2)  # read offset 32,33
-    read_le(stream, 10) # waste offsets 34-43
+    read_le(stream, 10)  # waste offsets 34-43
     if info:
-        print(f'Digital sample - freq: {freq} Hz, length: {length/freq:.1f} sec ({length} bytes)')
+        print(f'Digital sample - freq: {freq} Hz, length: {length / freq:.1f} sec ({length} bytes)')
+    data = stream.read(length)
+    return {'freq': freq, 'data': data}
+
+
+def read_sci1_digital(stream, info):
+    prio = read_le(stream)  # unused
+    freq = read_le(stream, 2)
+    length = read_le(stream, 2)
+    offset = read_le(stream, 2)  # from end of header
+    end = read_le(stream, 2)
+    stream.seek(offset)
+    if info:
+        print(f'Digital sample - freq: {freq} Hz, length: {length / freq:.1f} sec ({length} bytes)')
     data = stream.read(length)
     return {'freq': freq, 'data': data}
 
 
 def play_wave(wave):
-    audio = pyaudio.PyAudio()
-    stream = audio.open(format=audio.get_format_from_width(1),
-                        channels=1,
-                        rate=wave['freq'],
-                        output=True)
-    stream.write(wave['data'])
-    stream.stop_stream()
-    stream.close()
-    audio.terminate()
+    if wave:
+        audio = pyaudio.PyAudio()
+        stream = audio.open(format=audio.get_format_from_width(1),
+                            channels=1,
+                            rate=wave['freq'],
+                            output=True)
+        stream.write(wave['data'])
+        stream.stop_stream()
+        stream.close()
+        audio.terminate()
 
 
-def save_wave(data, freq, filename):
-    with wave.open(filename, 'wb') as w:
+def save_wave(wave_dict, input_file, save_file):
+    if not save_file:
+        save_file = input_file + ".wav"
+
+    with wave.open(save_file, 'wb') as w:
         w.setnchannels(1)
         w.setsampwidth(1)
-        w.setframerate(freq)
-        w.writeframes(data)
+        w.setframerate(wave_dict['freq'])
+        w.writeframes(wave_dict['data'])
 
 
 def read_sci0_snd_file(stream, sci0_early, info):
@@ -281,11 +306,13 @@ def read_sci1_snd_file(stream, info):
         track_type = read_le(stream)
         channels = []
         if track_type == 0xff:
+            # end of tracks
             break
         if track_type != 0xf0:
             while True:
                 channel_marker = read_le(stream)
                 if channel_marker == 0xff:
+                    # end of channels in track
                     device_tracks[track_type] = channels
                     break
                 unknown_2nd = read_le(stream)
@@ -301,6 +328,7 @@ def read_sci1_snd_file(stream, info):
 
         else:
             # digital track, not supported
+            print("encountered digital track, not supported (also ignored by ScummVM and SCICompanion)")
             _ = read_le(stream, 6)
             assert read_le(stream) == 0xff
 
@@ -309,7 +337,12 @@ def read_sci1_snd_file(stream, info):
             channel_nums = []
             for channel in device_tracks[track]:
                 stream.seek(channel['data_offset'])
-                channel_nums.append(read_le(stream) % 16 + 1)
+                ch = read_le(stream)
+                if ch != 0xfe:
+                    ch = ch % 16 + 1
+                else:
+                    ch = 'digital'
+                channel_nums.append(ch)
             print(f'Device {SCI1_Devices(track).name} uses channels: {channel_nums}')
 
     # TODO treat all devices! currently taking only GM/MT32
@@ -317,12 +350,13 @@ def read_sci1_snd_file(stream, info):
         device_track = device_tracks[SCI1_Devices.GM.value]
     except KeyError:
         device_track = device_tracks[SCI1_Devices.MT_32.value]
+    wave = None
     for channel in device_track:
         stream.seek(channel['data_offset'])
         channel_number = read_le(stream)
         if channel_number == 0xfe:
-            warnings.warn(
-                "Sound file has a digital channel; currently not supported and ignored. Contact Zvika, or raise an issue")
+            assert wave is None
+            wave = read_sci1_digital(stream, info)
         else:
             number = channel_number % 16
             # TODO should we do anything with the flags, poly, and prio?
@@ -335,7 +369,7 @@ def read_sci1_snd_file(stream, info):
             midtrack = read_messages(stream, channel['size'] - 2)  # we already read channel_number, poly_and_prio
             midifile.tracks.append(midtrack)
 
-    return {'midifile': midifile, 'wave': None}
+    return {'midifile': midifile, 'wave': wave}
 
 
 def save_sci1(midifile, input_file, save_file):
@@ -503,7 +537,7 @@ def main():
     parser = GooeyParser(description="Sierra SCI 'snd' manager - load, save and play",
                          epilog='GUI starts if no arguments are supplied')
 
-    input_group = parser.add_argument_group("Input Options", )
+    input_group = parser.add_argument_group("Input options", )
     input_group.add_argument("input_file",
                              help="input file to load\neither SCI ('sound.*', '*.snd'), or MIDI ('*.mid')",
                              widget="FileChooser", gooey_options={
@@ -516,13 +550,13 @@ def main():
     input_group.add_argument("--input_version", "-i", choices=['SCI0_EARLY', 'SCI0', 'SCI1+'], default='SCI0',
                              help="sound format version. ", widget='ReadOnlyDropdown')
 
-    play_group = parser.add_argument_group("Play Options", )
+    play_group = parser.add_argument_group("Play options", )
     play_group.add_argument("--play", "-p", action='store_true', help="play the input file")
     play_group.add_argument("--verbose", "-v", action='store_true', help="show midi messages as they are played")
     play_group.add_argument("--port", "-t", choices=mido.get_output_names(), widget="ReadOnlyDropdown",
                             help="select MIDI port to use, instead of the default one")
 
-    save_group = parser.add_argument_group("Save Options", )
+    save_group = parser.add_argument_group("Save options", )
     save_type_group = save_group.add_mutually_exclusive_group(gooey_options={
         'title': 'Save as',
         'initial_selection': 0,
@@ -531,10 +565,17 @@ def main():
     save_type_group.add_argument("--save_midi", "-m", action='store_true', help="save as .mid file")
     save_type_group.add_argument("--save_sci1", "-1", action='store_true', help="save as .snd SCI1+ file")
     save_group.add_argument("--save_file",
-                            help="saved file name (default: original name + 'snd' or + 'midi)",
+                            help="saved file name (default: original name + 'snd' or + 'midi')",
                             widget="FileSaver")
 
-    misc_group = parser.add_argument_group("Miscellaneous Options", )
+    digital_group = parser.add_argument_group("Digital sample options", "Optional related to digital sample (if exists), or adding one")
+    digital_group.add_argument("--play_wav", action='store_true', help="play the digital sample")
+    digital_group.add_argument("--save_wav", action='store_true', help="save the digital sample")
+    save_group.add_argument("--save_wav_file",
+                            help="digital sample saved file name (default: original name + 'wav')",
+                            widget="FileSaver")
+
+    misc_group = parser.add_argument_group("Miscellaneous options", )
     misc_group.add_argument("--info", "-f", action='store_true', help="print info about the file", gooey_options={
         'initial_value': True
     })
@@ -550,7 +591,12 @@ def main():
 
     if args.play:
         play_midi(midi_wave['midifile'], args.port, args.verbose)
+
+    if args.play_wav:
         play_wave(midi_wave['wave'])
+
+    if args.save_wav:
+        save_wave(midi_wave['wave'], args.input_file, args.save_wav_file)
 
 
 if __name__ == "__main__":
