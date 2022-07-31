@@ -1,16 +1,13 @@
 # spec: https://wiki.scummvm.org/index.php/SCI/Specifications/Sound/SCI0_Resource_Format
-# SCI1+ additions from:
-# https://github.com/icefallgames/SCICompanion/blob/f1a603b48b1aa7abf94f78574a8f69a653e2ca62/SCICompanionLib/Src/Resources/Sound.cpp#L1483
+# https://sciprogramming.com/community/index.php?topic=2072
 
-# TODO: The MT-32 always plays channel 9, the MIDI percussion channel, regardless of whether or not the channel is flagged for the device. Other MIDI devices may also do this.
-# TODO: sci0: play only specific device
 # TODO: sci1: choose device to play/save_midi
+# TODO: sci0: choose device to save_midi
 # TODO: sci0: write (regular + digital)
 # TODO: sci0_early: write
 # TODO: verify cue, loop in writing (sound.200)
 # TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
 
-# TODO: input_files: support *
 # TODO: input_version: auto detect
 # TODO: gooey: update widgets from each other (file chosen - change devices to play)
 # TODO: logging ; add info logging for sci0 digital offset not zero
@@ -21,6 +18,7 @@
 
 # TODO: debug adding digital sample to SCI1 file that hadn't such
 # TODO: verify converting MIDI to SND (first 10 bytes, etc.)
+# TODO: The MT-32 always plays channel 9 (https://sciprogramming.com/community/index.php?topic=2074.0)
 
 import sys
 import warnings
@@ -33,6 +31,7 @@ from enum import Flag, Enum
 from copy import deepcopy
 from ast import literal_eval
 import wave
+from glob import glob
 
 import mido
 import rtmidi  # pip install python-rtmidi
@@ -235,15 +234,16 @@ def play_wave(wave):
 
 
 def save_wave(wave_dict, input_file, save_file):
-    if not save_file:
-        save_file = input_file + ".wav"
+    if wave_dict:
+        if not save_file:
+            save_file = input_file + ".wav"
 
-    with wave.open(save_file, 'wb') as w:
-        w.setnchannels(1)
-        w.setsampwidth(1)
-        w.setframerate(wave_dict['freq'])
-        w.writeframes(wave_dict['data'])
-    print(f'Saved {save_file}')
+        with wave.open(save_file, 'wb') as w:
+            w.setnchannels(1)
+            w.setsampwidth(1)
+            w.setframerate(wave_dict['freq'])
+            w.writeframes(wave_dict['data'])
+        print(f'Saved {save_file}')
 
 
 def read_sci0_snd_file(stream, sci0_early, info):
@@ -302,7 +302,7 @@ def read_sci0_snd_file(stream, sci0_early, info):
         wave = None
     midifile.tracks.append(track)
 
-    return {'midifile': midifile, 'wave': wave}
+    return {'midifile': midifile, 'devices': devices, 'wave': wave}
 
 
 def read_sci1_snd_file(stream, info):
@@ -338,17 +338,19 @@ def read_sci1_snd_file(stream, info):
             _ = read_le(stream, 6)
             assert read_le(stream) == 0xff
 
-    if info:
-        for track in device_tracks:
-            channel_nums = []
-            for channel in device_tracks[track]:
-                stream.seek(channel['data_offset'])
-                ch = read_le(stream)
-                if ch != SCI1_DIGITAL_CHANNEL_MARKER:
-                    ch = ch % 16 + 1
-                else:
-                    ch = 'digital'
-                channel_nums.append(ch)
+    devices = {}
+    for track in device_tracks:
+        channel_nums = []
+        for channel in device_tracks[track]:
+            stream.seek(channel['data_offset'])
+            ch = read_le(stream)
+            if ch != SCI1_DIGITAL_CHANNEL_MARKER:
+                ch = ch % 16 + 1
+            else:
+                ch = 'digital'
+            channel_nums.append(ch)
+        devices[SCI1_Devices(track)] = channel_nums
+        if info:
             print(f'Device {SCI1_Devices(track).name} uses channels: {channel_nums}')
 
     # TODO treat all devices! currently taking only GM/MT32
@@ -375,7 +377,7 @@ def read_sci1_snd_file(stream, info):
             midtrack = read_messages(stream, channel['size'] - 2)  # we already read channel_number, poly_and_prio
             midifile.tracks.append(midtrack)
 
-    return {'midifile': midifile, 'wave': wave}
+    return {'midifile': midifile, 'devices': devices, 'wave': wave}
 
 
 def save_sci1(midi_wave, input_file, save_file):
@@ -511,12 +513,60 @@ def show_progress(length):
         print(f'seconds: {i + 1}/{length}')
 
 
-def play_midi(midifile, port=None, verbose=False):
+def select_channels(midifile, channels):
+    result = MidiFile(type=midifile.type, ticks_per_beat=midifile.ticks_per_beat)
+    for orig_track in midifile.tracks:
+        track = MidiTrack()
+        delta = 0
+        for msg in orig_track:
+            try:
+                if msg.channel in channels:
+                    track.append(msg.copy(time=msg.time + delta))
+                    delta = 0
+                else:
+                    delta = msg.time
+            except AttributeError:
+                track.append(msg)
+        result.tracks.append(track)
+    return result
+
+
+def get_midi_channels_of_device(play_device, devices):
+    if play_device == 'ALL CHANNELS IN FILE':
+        result = []
+        for device_channels in devices.values():
+            for c in device_channels:
+                if c != 'digital':
+                    try:
+                        result.append(c['ch'] - 1)
+                    except TypeError:
+                        result.append(c - 1)
+        return sorted(list(set(result)))
+
+    else:
+        relevant_devices = [d for d in devices if play_device in d.name]
+        if not relevant_devices:
+            return []
+        else:
+            assert len(relevant_devices) == 1
+            relevant_device = devices[relevant_devices[0]]
+            try:
+                return [c['ch'] - 1 for c in relevant_device]
+            except TypeError:
+                return [c - 1 for c in relevant_device]
+
+
+def play_midi(midi_wave, play_device, port=None, verbose=False):
     if port is None:
         port = mido.open_output()
     else:
         print(f'Using {port} for MIDI playback')
         port = mido.open_output(port)
+
+    channels = get_midi_channels_of_device(play_device, midi_wave['devices'])
+    midifile = select_channels(midi_wave['midifile'], channels)
+
+    print(f'Playing {play_device}, length {midifile.length:.1f} seconds')
 
     if gooey_misc.gooey_enabled:
         print(f'seconds: {0}/{round(midifile.length)}')
@@ -566,6 +616,14 @@ gooey_misc.progress_bar_dont_display_remaining_time()
 # gooey_misc.args_replace_underscore_with_spaces()  # TODO: it makes FileChooser to ignore wildcards
 
 
+def get_all_devices():
+    devices = sorted(list(
+        set([d.name for d in SCI0_Early_Devices] + [d.name for d in SCI0_Devices] + [d.name for d in SCI1_Devices])))
+    devices.remove('UNKNOWN')
+    devices.insert(0, 'ALL CHANNELS IN FILE')
+    return devices
+
+
 @Gooey(clear_before_run=True,
        progress_regex=r"^seconds: (?P<current>.*)/(?P<total>.*)$",
        progress_expr="current / total * 100",
@@ -597,6 +655,9 @@ def main():
     play_group = parser.add_argument_group("Play options", )
     play_group.add_argument("--play", "-p", action='store_true', help="play the input file")
     play_group.add_argument("--verbose", "-v", action='store_true', help="show midi messages as they are played")
+    play_group.add_argument("--play_device", choices=get_all_devices(), widget="ReadOnlyDropdown",
+                            default='ALL CHANNELS IN FILE',
+                            help="select which device to play. note: this list also shows irrelevant devices. run with '--info' to see which devices actually exist in this file")
     play_group.add_argument("--port", "-t", choices=mido.get_output_names(), widget="ReadOnlyDropdown",
                             help="select MIDI port to use, instead of the default one")
 
@@ -634,7 +695,8 @@ def main():
     })
     args = parser.parse_args()
 
-    for input_file in args.input_files:
+    # run over all supplied input_files (list), and open all '*' expressions
+    for input_file in [item for sublist in args.input_files for item in glob(sublist)]:
         if args.info:
             print(f'\n{input_file}\t{args.input_version}')
 
@@ -647,7 +709,7 @@ def main():
             save_sci1(midi_wave, input_file, args.save_file)
 
         if args.play:
-            play_midi(midi_wave['midifile'], args.port, args.verbose)
+            play_midi(midi_wave, args.play_device, args.port, args.verbose)
 
         if args.play_wav:
             play_wave(midi_wave['wave'])
