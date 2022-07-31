@@ -2,7 +2,6 @@
 # SCI1+ additions from:
 # https://github.com/icefallgames/SCICompanion/blob/f1a603b48b1aa7abf94f78574a8f69a653e2ca62/SCICompanionLib/Src/Resources/Sound.cpp#L1483
 
-# TODO: sci1: write digital sample
 # TODO: load .wav file
 # TODO: The MT-32 always plays channel 9, the MIDI percussion channel, regardless of whether or not the channel is flagged for the device. Other MIDI devices may also do this.
 # TODO: sci0: play only specific device
@@ -45,6 +44,8 @@ import gooey_misc
 SIERRA_SND_HEADER = b'\x84\0'
 NUM_OF_CHANNELS = 16
 TICKS_PER_BIT = 30
+
+SCI1_DIGITAL_CHANNEL_MARKER = 0xfe
 
 
 def read_le(stream, length=1):
@@ -240,6 +241,7 @@ def save_wave(wave_dict, input_file, save_file):
         w.setsampwidth(1)
         w.setframerate(wave_dict['freq'])
         w.writeframes(wave_dict['data'])
+    print(f'Saved {save_file}')
 
 
 def read_sci0_snd_file(stream, sci0_early, info):
@@ -340,7 +342,7 @@ def read_sci1_snd_file(stream, info):
             for channel in device_tracks[track]:
                 stream.seek(channel['data_offset'])
                 ch = read_le(stream)
-                if ch != 0xfe:
+                if ch != SCI1_DIGITAL_CHANNEL_MARKER:
                     ch = ch % 16 + 1
                 else:
                     ch = 'digital'
@@ -356,7 +358,7 @@ def read_sci1_snd_file(stream, info):
     for channel in device_track:
         stream.seek(channel['data_offset'])
         channel_number = read_le(stream)
-        if channel_number == 0xfe:
+        if channel_number == SCI1_DIGITAL_CHANNEL_MARKER:
             assert wave is None
             wave = read_sci1_digital(stream, info)
         else:
@@ -374,7 +376,10 @@ def read_sci1_snd_file(stream, info):
     return {'midifile': midifile, 'wave': wave}
 
 
-def save_sci1(midifile, input_file, save_file):
+def save_sci1(midi_wave, input_file, save_file):
+    midifile = midi_wave['midifile']
+
+    # get devices information from midi information track (if exists - probably created by us, when reading a SCI0 file)
     devices = {}
     for msg in midifile.tracks[0]:
         if msg.type == 'device_name' and msg.name.startswith('Device '):
@@ -395,29 +400,41 @@ def save_sci1(midifile, input_file, save_file):
         msg.time = timer
         messages.append(msg)
 
+    # prepare channels data, will be written to file later
     channel_offsets = {}
     channel_sizes = {}
     channel_nums = sorted(list(set([m.channel for m in messages if not m.is_realtime and not m.is_meta])))
+    if midi_wave['wave'] and SCI1_DIGITAL_CHANNEL_MARKER not in channel_nums:
+        channel_nums.append(SCI1_DIGITAL_CHANNEL_MARKER)
     with io.BytesIO() as channels_stream:
         for ch in channel_nums:
-            timer = 0
             channel_offsets[ch] = channels_stream.tell()
-            # print('ch', ch, end='\t')
-            write_le(channels_stream, ch)  # TODO flags
-            # print('poly_prio', 1, end='\t')
-            write_le(channels_stream, 0x1)  # TODO poly and prio
-            for msg in messages:
-                if not msg.is_meta and (msg.is_realtime or msg.channel == ch):
-                    delta = msg.time - timer
-                    timer = msg.time
-                    # print('delay', get_sierra_delay_bytes(delta).hex())
-                    # print('msg', msg.bin().hex())
-                    channels_stream.write(get_sierra_delay_bytes(delta))
-                    channels_stream.write(msg.bin())
+            if ch != SCI1_DIGITAL_CHANNEL_MARKER:
+                write_le(channels_stream, ch)  # TODO flags
+                write_le(channels_stream, 0x1)  # TODO poly and prio
+                timer = 0
+                for msg in messages:
+                    if not msg.is_meta and (msg.is_realtime or msg.channel == ch):
+                        delta = msg.time - timer
+                        timer = msg.time
+                        # print('delay', get_sierra_delay_bytes(delta).hex())
+                        # print('msg', msg.bin().hex())
+                        channels_stream.write(get_sierra_delay_bytes(delta))
+                        channels_stream.write(msg.bin())
+            else:
+                digital = midi_wave['wave']
+                write_le(channels_stream, ch)  # no flags
+                write_le(channels_stream, 0x0)  # prio, no poly
+                write_le(channels_stream, digital['freq'], 2)
+                write_le(channels_stream, len(digital['data']), 2)  # length
+                write_le(channels_stream, 0x0, 2)  # offset from end of header
+                write_le(channels_stream, len(digital['data']), 2)  # end of sample
+                channels_stream.write(digital['data'])
             channel_sizes[ch] = channels_stream.tell() - channel_offsets[ch]
         channels_bytes = channels_stream.getvalue()
 
-    if not devices:
+    # make devices table, if doesn't exists
+    if channel_nums and not devices:
         print(
             "Couldn't find devices information in first track; using arbitrary values. Contact Zvika if you wish to have control over this")
         channels = [{'ch': ch + 1} for ch in channel_nums]
@@ -436,6 +453,7 @@ def save_sci1(midifile, input_file, save_file):
         save_file = input_file + ".snd"
     with open(save_file, 'wb') as f:
         f.write(SIERRA_SND_HEADER)
+        # write header
         for device in devices:
             write_le(f, device.value)
             device_channels = [c['ch'] - 1 for c in devices[device]]
@@ -446,6 +464,8 @@ def save_sci1(midifile, input_file, save_file):
             write_le(f, 0xff)
         write_le(f, 0xff)
         assert f.tell() == 2 + header_size  # 2 is the SIERRA_SND_HEADER
+
+        # write channels data
         f.write(channels_bytes)
     print(f'Saved {save_file}')
 
