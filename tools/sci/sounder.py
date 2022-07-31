@@ -3,6 +3,7 @@
 # https://github.com/icefallgames/SCICompanion/blob/f1a603b48b1aa7abf94f78574a8f69a653e2ca62/SCICompanionLib/Src/Resources/Sound.cpp#L1483
 
 # TODO: sci1: write digital sample
+# TODO: load .wav file
 # TODO: The MT-32 always plays channel 9, the MIDI percussion channel, regardless of whether or not the channel is flagged for the device. Other MIDI devices may also do this.
 # TODO: sci0: play only specific device
 # TODO: sci1: choose device to play/save_midi
@@ -11,6 +12,7 @@
 # TODO: verify cue, loop in writing (sound.200)
 # TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
 
+# TODO: input_files: support *
 # TODO: input_version: auto detect
 # TODO: gooey: update widgets from each other (file chosen - change devices to play)
 # TODO: logging ; add info logging for sci0 digital offset not zero
@@ -538,9 +540,10 @@ def main():
                          epilog='GUI starts if no arguments are supplied')
 
     input_group = parser.add_argument_group("Input options", )
-    input_group.add_argument("input_file",
-                             help="input file to load\neither SCI ('sound.*', '*.snd'), or MIDI ('*.mid')",
-                             widget="FileChooser", gooey_options={
+    input_group.add_argument("input_files",
+                             help="input file(s) to load;\neither SCI ('sound.*', '*.snd'), or MIDI ('*.mid')",
+                             nargs='+',
+                             widget="MultiFileChooser", gooey_options={
             'wildcard':
                 'All supported files (*.snd;sound.*;*.mid)|*.snd;sound.*;*.mid|'
                 'Sierra Sound files (*.snd;sound.*)|*.snd;sound.*|'
@@ -568,7 +571,8 @@ def main():
                             help="saved file name (default: original name + 'snd' or + 'midi')",
                             widget="FileSaver")
 
-    digital_group = parser.add_argument_group("Digital sample options", "Optional related to digital sample (if exists), or adding one")
+    digital_group = parser.add_argument_group("Digital sample options",
+                                              "Optional related to digital sample (if exists), or adding one")
     digital_group.add_argument("--play_wav", action='store_true', help="play the digital sample")
     digital_group.add_argument("--save_wav", action='store_true', help="save the digital sample")
     save_group.add_argument("--save_wav_file",
@@ -581,22 +585,26 @@ def main():
     })
     args = parser.parse_args()
 
-    midi_wave = read_input(args.input_file, args.input_version, args.info)
+    for input_file in args.input_files:
+        if args.info:
+            print(f'\n{input_file}\t{args.input_version}')
 
-    if args.save_midi:
-        save_midi(midi_wave['midifile'], args.input_file, args.save_file)
+        midi_wave = read_input(input_file, args.input_version, args.info)
 
-    if args.save_sci1:
-        save_sci1(midi_wave, args.input_file, args.save_file)
+        if args.save_midi:
+            save_midi(midi_wave['midifile'], input_file, args.save_file)
 
-    if args.play:
-        play_midi(midi_wave['midifile'], args.port, args.verbose)
+        if args.save_sci1:
+            save_sci1(midi_wave, input_file, args.save_file)
 
-    if args.play_wav:
-        play_wave(midi_wave['wave'])
+        if args.play:
+            play_midi(midi_wave['midifile'], args.port, args.verbose)
 
-    if args.save_wav:
-        save_wave(midi_wave['wave'], args.input_file, args.save_wav_file)
+        if args.play_wav:
+            play_wave(midi_wave['wave'])
+
+        if args.save_wav:
+            save_wave(midi_wave['wave'], input_file, args.save_wav_file)
 
 
 if __name__ == "__main__":
