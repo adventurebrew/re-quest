@@ -1,17 +1,17 @@
-# spec: https://wiki.scummvm.org/index.php/SCI/Specifications/Sound/SCI0_Resource_Format
+# spec:
+# https://wiki.scummvm.org/index.php/SCI/Specifications/Sound/SCI0_Resource_Format
 # https://sciprogramming.com/community/index.php?topic=2072
 
-# TODO: sci1: choose device to save_midi
-# TODO: sci0: choose device to save_midi
-# TODO: sci0: write (regular + digital)
 # TODO: sci0_early: write
 # TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
 
-# TODO: gooey: update widgets from each other (file chosen - change devices to play)
 # TODO: logging ; add info logging for sci0 digital offset not zero
+# TODO: gooey: update widgets from each other (file chosen - change devices to play)
 # TODO: info: channels (also for midi)
 # TODO: gui: menu?
 # TODO: pyinstaller
+# TODO: sci1: choose device to save_midi
+# TODO: sci0: choose device to save_midi
 
 # TODO: verify cue, loop in writing (sound.200)
 # TODO: debug adding digital sample to SCI1 file that hadn't such
@@ -218,7 +218,10 @@ def read_sci0_digital(stream, info):
     length = read_le(stream, 2)  # read offset 32,33
     read_le(stream, 10)  # waste offsets 34-43
     if info:
-        print(f'Digital sample - freq: {freq} Hz, length: {length / freq:.1f} sec ({length} bytes)')
+        if freq and length:
+            print(f'Digital sample - freq: {freq} Hz, length: {length / freq:.1f} sec ({length} bytes)')
+        else:
+            print(f'Digital sample - something seems wrong - freq: {freq} Hz, length: ({length} bytes)')
     data = stream.read(length)
     return {'freq': freq, 'data': data}
 
@@ -396,10 +399,97 @@ def read_sci1_snd_file(stream, info):
     return {'midifile': midifile, 'devices': devices, 'wave': wave}
 
 
+def clean_stops(messages):
+    # required for SCI0, if there is digital channel - it's identified by looking for 0xFC (or 2)
+    # but we might have more 0xFC-s in our file, if each track had it's own 'stop' command
+    # this leaves only the last STOP (0xFC) command
+    result = []
+    redundant_stops = len([m for m in messages if m.type == 'stop']) - 1  # remove all but one
+    stops = 0
+    for msg in messages:
+        if msg.type != 'stop':
+            result.append(msg)
+        else:
+            stops += 1
+            if stops > redundant_stops:
+                result.append(msg)
+    assert len([m for m in result if m.type == 'stop']) == 1
+    return result
+
+
+def save_sci0(midi_wave, input_file, save_file, is_early):
+    if is_early:
+        sys.exit("SCI0 Early save isn't supported (yet)")
+
+    midifile = midi_wave['midifile']
+    digital = midi_wave['wave']
+
+    # get devices information
+    devices = {}
+    for orig_device in midi_wave['devices']:
+        try:
+            device = SCI0_Devices[orig_device.name]
+            devices[device] = [c - 1 for c in midi_wave['devices'][orig_device] if c != 'digital']
+        except KeyError:
+            print(f"SAVE SCI0: Ignoring device {orig_device}, doesn't have a SCI0 counterpart")
+
+    # prepare midi data first (to be able to accurately write the digital sample offset)
+    with io.BytesIO() as f:
+        messages = mido.merge_tracks(midifile.tracks)
+        if digital:
+            messages = clean_stops(messages)
+        for msg in messages:
+            if not msg.is_meta:
+                # print('delay', get_sierra_delay_bytes(delta).hex())
+                # print('msg', msg.bin().hex())
+                f.write(get_sierra_delay_bytes(msg.time))
+                f.write(msg.bin())
+        midi_data = f.getvalue()
+
+    if not save_file:
+        save_file = input_file + ".snd"
+    with open(save_file, 'wb') as f:
+        f.write(SIERRA_SND_HEADER)
+        # write header
+        if digital:
+            write_le(f, 0x2)
+        else:
+            write_le(f, 0x0)
+        for ch in range(NUM_OF_CHANNELS):
+            if digital and ch == NUM_OF_CHANNELS - 1:
+                # I tried using the offset mechanism described at Ravi's spec
+                # sv.exe crashed; reading SCICompanion and ScummVM code, it seems that neither support that method
+                write_le(f, 0x0, 2)
+            else:
+                write_le(f, 0)  # TODO write voices for ADLIB
+                hw = SCI0_Devices(0)
+                for device in devices:
+                    if ch in devices[device]:
+                        hw |= device
+                write_le(f, hw.value)
+
+        # write midi data
+        f.write(midi_data)
+
+        # write digital
+        if digital:
+            # assert f.tell() - 1 == len(SIERRA_SND_HEADER) + last_non_digital_offset
+            # we don't know the meaning of most of the 44 bytes header
+            write_le(f, 0x0, 14)  # waste offsets 0-13
+            write_le(f, digital['freq'], 2)  # write offset 14,15
+            write_le(f, 0x0, 16)  # waste offsets 16-31
+            write_le(f, len(digital['data']), 2)  # write offset 32,33
+            write_le(f, 0x0, 10)  # waste offsets 34-43
+            f.write(digital['data'])
+
+    print(f'Saved {save_file}')
+
+
 def save_sci1(midi_wave, input_file, save_file):
     midifile = midi_wave['midifile']
 
     # get devices information from midi information track (if exists - probably created by us, when reading a SCI0 file)
+    # TODO: take it from midi_wave['devices']
     devices = {}
     for msg in midifile.tracks[0]:
         if msg.type == 'device_name' and msg.name.startswith('Device '):
@@ -682,6 +772,9 @@ def main():
     })
     save_type_group.add_argument("--dont_save", action='store_true', help="don't save (default)", )
     save_type_group.add_argument("--save_midi", "-m", action='store_true', help="save as .mid file")
+    save_type_group.add_argument("--save_sci0_early", "-e", action='store_true',
+                                 help="save as sound. SCI0 (EARLY) file")
+    save_type_group.add_argument("--save_sci0", "-0", action='store_true', help="save as sound. SCI0 file")
     save_type_group.add_argument("--save_sci1", "-1", action='store_true', help="save as .snd SCI1+ file")
     save_group.add_argument("--save_file",
                             help="saved file name (default: original name + 'snd' or + 'midi')",
@@ -718,6 +811,9 @@ def main():
 
         if args.save_midi:
             save_midi(midi_wave['midifile'], input_file, args.save_file)
+
+        if args.save_sci0 or args.save_sci0_early:
+            save_sci0(midi_wave, input_file, args.save_file, args.save_sci0_early)
 
         if args.save_sci1:
             save_sci1(midi_wave, input_file, args.save_file)
