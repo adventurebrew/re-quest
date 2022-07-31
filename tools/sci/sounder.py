@@ -12,7 +12,6 @@
 # TODO: gooey: update widgets from each other (file chosen - change devices to play)
 # TODO: logging ; add info logging for sci0 digital offset not zero
 # TODO: info: channels (also for midi)
-# TODO: early: register mt_32 only for existing channels
 # TODO: gui: menu?
 # TODO: pyinstaller
 
@@ -267,7 +266,8 @@ def read_sci0_snd_file(stream, sci0_early, info):
                 b = read_le(stream)
                 voices = b // 16
                 hardware = SCI0_Early_Devices(b % 16)
-                hardware |= SCI0_Early_Devices.MT_32
+                if hardware:
+                    hardware |= SCI0_Early_Devices.MT_32
                 if SCI0_Early_Devices.ADLIB in hardware and SCI0_Early_Devices.CONTROL_CHANNEL in hardware:
                     # according to Ravi's spec, and ScummVM adlib driver, ADLIB ignores the channel if it's also a CONTROL
                     hardware &= ~SCI0_Early_Devices.ADLIB
