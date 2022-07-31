@@ -2,7 +2,6 @@
 # https://wiki.scummvm.org/index.php/SCI/Specifications/Sound/SCI0_Resource_Format
 # https://sciprogramming.com/community/index.php?topic=2072
 
-# TODO: sci0_early: write
 # TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
 
 # TODO: logging ; add info logging for sci0 digital offset not zero
@@ -17,6 +16,8 @@
 # TODO: debug adding digital sample to SCI1 file that hadn't such
 # TODO: verify converting MIDI to SND (first 10 bytes, etc.)
 # TODO: The MT-32 always plays channel 9 (https://sciprogramming.com/community/index.php?topic=2074.0)
+# TODO: sci0: write adlib - voices?
+# TODO: early: saving with digital behaves weird
 
 import sys
 import warnings
@@ -418,22 +419,27 @@ def clean_stops(messages):
 
 
 def save_sci0(midi_wave, input_file, save_file, is_early):
-    if is_early:
-        sys.exit("SCI0 Early save isn't supported (yet)")
-
     midifile = midi_wave['midifile']
     digital = midi_wave['wave']
 
     # get devices information
     devices = {}
-    for orig_device in midi_wave['devices']:
-        try:
-            device = SCI0_Devices[orig_device.name]
-            devices[device] = [c - 1 for c in midi_wave['devices'][orig_device] if c != 'digital']
-        except KeyError:
-            print(f"SAVE SCI0: Ignoring device {orig_device}, doesn't have a SCI0 counterpart")
+    if is_early:
+        for orig_device in midi_wave['devices']:
+            try:
+                device = SCI0_Early_Devices[orig_device.name]
+                devices[device] = [c - 1 for c in midi_wave['devices'][orig_device] if c != 'digital']
+            except KeyError:
+                print(f"SAVE SCI0 (EARLY): Ignoring device {orig_device}, doesn't have a SCI0 (EARLY) counterpart")
+    else:
+        for orig_device in midi_wave['devices']:
+            try:
+                device = SCI0_Devices[orig_device.name]
+                devices[device] = [c - 1 for c in midi_wave['devices'][orig_device] if c != 'digital']
+            except KeyError:
+                print(f"SAVE SCI0: Ignoring device {orig_device}, doesn't have a SCI0 counterpart")
 
-    # prepare midi data first (to be able to accurately write the digital sample offset)
+    # prepare midi data first
     with io.BytesIO() as f:
         messages = mido.merge_tracks(midifile.tracks)
         if digital:
@@ -456,17 +462,27 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
         else:
             write_le(f, 0x0)
         for ch in range(NUM_OF_CHANNELS):
-            if digital and ch == NUM_OF_CHANNELS - 1:
-                # I tried using the offset mechanism described at Ravi's spec
-                # sv.exe crashed; reading SCICompanion and ScummVM code, it seems that neither support that method
-                write_le(f, 0x0, 2)
-            else:
-                write_le(f, 0)  # TODO write voices for ADLIB
-                hw = SCI0_Devices(0)
+            if is_early:
+                voices = 0  # TODO
+                b = voices * 16
+                hw = SCI0_Early_Devices(0)
                 for device in devices:
-                    if ch in devices[device]:
+                    if ch in devices[device] and device != SCI0_Early_Devices.MT_32:
                         hw |= device
-                write_le(f, hw.value)
+                write_le(f, b + hw.value)
+            else:
+                # regular SCI0
+                if digital and ch == NUM_OF_CHANNELS - 1:
+                    # I tried using the offset mechanism described at Ravi's spec
+                    # sv.exe crashed; reading SCICompanion and ScummVM code, it seems that neither support that method
+                    write_le(f, 0x0, 2)
+                else:
+                    write_le(f, 0)  # TODO write voices for ADLIB
+                    hw = SCI0_Devices(0)
+                    for device in devices:
+                        if ch in devices[device]:
+                            hw |= device
+                    write_le(f, hw.value)
 
         # write midi data
         f.write(midi_data)
