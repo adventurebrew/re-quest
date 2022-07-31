@@ -8,7 +8,6 @@
 # TODO: verify cue, loop in writing (sound.200)
 # TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
 
-# TODO: input_version: auto detect
 # TODO: gooey: update widgets from each other (file chosen - change devices to play)
 # TODO: logging ; add info logging for sci0 digital offset not zero
 # TODO: info: channels (also for midi)
@@ -169,6 +168,23 @@ def read_messages(stream, size=None):
 
 
 def read_snd_file(p, input_version, info):
+    if input_version != "AUTO_DETECT":
+        return read_snd_file_with_version(p, input_version, info)
+    else:
+        if p.suffix == '.snd':
+            order = ['SCI1+', 'SCI0', 'SCI0_EARLY']
+        else:
+            order = ['SCI0', 'SCI0_EARLY', 'SCI1+']
+        for version in order:
+            print(f'\n****   Trying {version}    *****')
+            try:
+                return read_snd_file_with_version(p, version, info)
+            except:
+                pass
+        raise ValueError("Couldn't find file's version, or file is corrupter")
+
+
+def read_snd_file_with_version(p, input_version, info):
     stream = io.BytesIO(p.read_bytes())
     assert stream.read(2) == SIERRA_SND_HEADER
     stream = io.BytesIO(stream.read())  # chop the first 2 bytes - it's only confusing for offsets
@@ -647,11 +663,12 @@ def main():
                 'Midi Files (*.mid)|*.mid|'
                 'All Files (*.*)|*.*',
         })
-    input_group.add_argument("--input_version", "-i", choices=['SCI0_EARLY', 'SCI0', 'SCI1+'], default='SCI0',
-                             help="sound format version. ", widget='ReadOnlyDropdown')
+    input_group.add_argument("--input_version", "-i", choices=['AUTO_DETECT', 'SCI0_EARLY', 'SCI0', 'SCI1+'],
+                             default='AUTO_DETECT',
+                             help="sound format version", widget='ReadOnlyDropdown')
 
     play_group = parser.add_argument_group("Play options", )
-    play_group.add_argument("--play", "-p", action='store_true', help="play the input file")
+    play_group.add_argument("--play", "-p", action='store_true', help="play the music from input file")
     play_group.add_argument("--verbose", "-v", action='store_true', help="show midi messages as they are played")
     play_group.add_argument("--play_device", choices=get_all_devices(), widget="ReadOnlyDropdown",
                             default='ALL CHANNELS IN FILE',
