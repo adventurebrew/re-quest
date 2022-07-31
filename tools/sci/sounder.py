@@ -1,11 +1,10 @@
 # spec: https://wiki.scummvm.org/index.php/SCI/Specifications/Sound/SCI0_Resource_Format
 # https://sciprogramming.com/community/index.php?topic=2072
 
-# TODO: sci1: choose device to play/save_midi
+# TODO: sci1: choose device to save_midi
 # TODO: sci0: choose device to save_midi
 # TODO: sci0: write (regular + digital)
 # TODO: sci0_early: write
-# TODO: verify cue, loop in writing (sound.200)
 # TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
 
 # TODO: gooey: update widgets from each other (file chosen - change devices to play)
@@ -14,6 +13,7 @@
 # TODO: gui: menu?
 # TODO: pyinstaller
 
+# TODO: verify cue, loop in writing (sound.200)
 # TODO: debug adding digital sample to SCI1 file that hadn't such
 # TODO: verify converting MIDI to SND (first 10 bytes, etc.)
 # TODO: The MT-32 always plays channel 9 (https://sciprogramming.com/community/index.php?topic=2074.0)
@@ -181,7 +181,7 @@ def read_snd_file(p, input_version, info):
                 return read_snd_file_with_version(p, version, info)
             except:
                 pass
-        raise ValueError("Couldn't find file's version, or file is corrupter")
+        raise ValueError("Couldn't find file's version, or file is corrupted")
 
 
 def read_snd_file_with_version(p, input_version, info):
@@ -327,7 +327,7 @@ def read_sci1_snd_file(stream, info):
     device_tracks = {}
     while True:
         track_type = read_le(stream)
-        channels = []
+        track_channels = []
         if track_type == 0xff:
             # end of tracks
             break
@@ -336,18 +336,16 @@ def read_sci1_snd_file(stream, info):
                 channel_marker = read_le(stream)
                 if channel_marker == 0xff:
                     # end of channels in track
-                    device_tracks[track_type] = channels
+                    device_tracks[track_type] = track_channels
                     break
                 unknown_2nd = read_le(stream)
                 data_offset = read_le(stream, 2)
                 size = read_le(stream, 2)
                 assert size > 0
-                channels.append({
-                    'channel_marker': channel_marker,
+                track_channels.append({
                     'data_offset': data_offset,
                     'size': size
                 })
-                # TODO have we already processed this channel?
 
         else:
             # digital track, not supported
@@ -356,6 +354,7 @@ def read_sci1_snd_file(stream, info):
             assert read_le(stream) == 0xff
 
     devices = {}
+    channels = {}
     for track in device_tracks:
         channel_nums = []
         for channel in device_tracks[track]:
@@ -366,17 +365,17 @@ def read_sci1_snd_file(stream, info):
             else:
                 ch = 'digital'
             channel_nums.append(ch)
+            if ch not in channels:
+                channels[ch] = channel
+            else:
+                if channels[ch] != channel:
+                    raise ValueError("SCI1 channels - channel repeated with different values")
         devices[SCI1_Devices(track)] = channel_nums
         if info:
             print(f'Device {SCI1_Devices(track).name} uses channels: {channel_nums}')
 
-    # TODO treat all devices! currently taking only GM/MT32
-    try:
-        device_track = device_tracks[SCI1_Devices.GM.value]
-    except KeyError:
-        device_track = device_tracks[SCI1_Devices.MT_32.value]
     wave = None
-    for channel in device_track:
+    for channel in channels.values():
         stream.seek(channel['data_offset'])
         channel_number = read_le(stream)
         if channel_number == SCI1_DIGITAL_CHANNEL_MARKER:
@@ -565,9 +564,9 @@ def get_midi_channels_of_device(play_device, devices):
             assert len(relevant_devices) == 1
             relevant_device = devices[relevant_devices[0]]
             try:
-                return [c['ch'] - 1 for c in relevant_device]
+                return [c['ch'] - 1 for c in relevant_device if c != 'digital']
             except TypeError:
-                return [c - 1 for c in relevant_device]
+                return [c - 1 for c in relevant_device if c != 'digital']
 
 
 def play_midi(midi_wave, play_device, port=None, verbose=False):
