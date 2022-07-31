@@ -35,6 +35,7 @@ from glob import glob
 import mido
 import rtmidi  # pip install python-rtmidi
 from mido import MidiFile, MidiTrack
+from mido.midifiles.tracks import _to_abstime, _to_reltime
 import pyaudio
 
 from gooey import Gooey, GooeyParser
@@ -516,17 +517,14 @@ def show_progress(length):
 def select_channels(midifile, channels):
     result = MidiFile(type=midifile.type, ticks_per_beat=midifile.ticks_per_beat)
     for orig_track in midifile.tracks:
-        track = MidiTrack()
-        delta = 0
-        for msg in orig_track:
+        messages = []
+        for msg in _to_abstime(orig_track):
             try:
                 if msg.channel in channels:
-                    track.append(msg.copy(time=msg.time + delta))
-                    delta = 0
-                else:
-                    delta = msg.time
+                    messages.append(msg)
             except AttributeError:
-                track.append(msg)
+                messages.append(msg)
+        track = MidiTrack(_to_reltime(messages))
         result.tracks.append(track)
     return result
 
