@@ -2,7 +2,6 @@
 # SCI1+ additions from:
 # https://github.com/icefallgames/SCICompanion/blob/f1a603b48b1aa7abf94f78574a8f69a653e2ca62/SCICompanionLib/Src/Resources/Sound.cpp#L1483
 
-# TODO: load .wav file
 # TODO: The MT-32 always plays channel 9, the MIDI percussion channel, regardless of whether or not the channel is flagged for the device. Other MIDI devices may also do this.
 # TODO: sci0: play only specific device
 # TODO: sci1: choose device to play/save_midi
@@ -19,6 +18,9 @@
 # TODO: early: register mt_32 only for existing channels
 # TODO: gui: menu?
 # TODO: pyinstaller
+
+# TODO: debug adding digital sample to SCI1 file that hadn't such
+# TODO: verify converting MIDI to SND (first 10 bytes, etc.)
 
 import sys
 import warnings
@@ -470,7 +472,23 @@ def save_sci1(midi_wave, input_file, save_file):
     print(f'Saved {save_file}')
 
 
-def read_input(input_file, input_version, info):
+def read_wav_file(input_wav):
+    result = {}
+    with wave.open(input_wav, 'rb') as w:
+        if w.getnchannels() != 1:
+            assert ValueError(
+                "Currently, wave file must have 1 channel (mono); (on the fly conversion will be supported later)")
+        if w.getsampwidth() != 1:
+            assert ValueError("Currently, wave file must be 8-bit; (on the fly conversion will be supported later)")
+        if w.getcomptype() != 'NONE':
+            assert ValueError(
+                "Currently, wave file must be uncompressed; (on the fly conversion will be supported later)")
+        result['freq'] = w.getframerate()
+        result['data'] = w.readframes(w.getnframes())
+    return result
+
+
+def read_input(input_file, input_version, input_wav, info):
     p = Path(input_file)
     if p.suffix.lower() == '.mid':
         midifile = read_midi_file(p)
@@ -481,6 +499,9 @@ def read_input(input_file, input_version, info):
         raise NameError("Received unsupported file (it should start with sound. or end with .mid/.snd) " + input_file)
     if info:
         print(f"Midi length: {result['midifile'].length:.1f} seconds")
+
+    if input_wav:
+        result['wave'] = read_wav_file(input_wav)
     return result
 
 
@@ -593,11 +614,19 @@ def main():
 
     digital_group = parser.add_argument_group("Digital sample options",
                                               "Optional related to digital sample (if exists), or adding one")
+    digital_group.add_argument("--input_wav",
+                               help="add file's contents as digital sample, or replace existing one",
+                               widget="FileChooser", gooey_options={
+            'wildcard':
+                'Wave files (*.wav)|*.wav|'
+                # TODO: all audio files
+                'All Files (*.*)|*.*',
+        })
     digital_group.add_argument("--play_wav", action='store_true', help="play the digital sample")
-    digital_group.add_argument("--save_wav", action='store_true', help="save the digital sample")
-    save_group.add_argument("--save_wav_file",
-                            help="digital sample saved file name (default: original name + 'wav')",
-                            widget="FileSaver")
+    digital_group.add_argument("--save_wav", action='store_true', help="save the digital sample as .wav file")
+    digital_group.add_argument("--save_wav_file",
+                               help="digital sample saved file name (default: original name + 'wav')",
+                               widget="FileSaver")
 
     misc_group = parser.add_argument_group("Miscellaneous options", )
     misc_group.add_argument("--info", "-f", action='store_true', help="print info about the file", gooey_options={
@@ -609,7 +638,7 @@ def main():
         if args.info:
             print(f'\n{input_file}\t{args.input_version}')
 
-        midi_wave = read_input(input_file, args.input_version, args.info)
+        midi_wave = read_input(input_file, args.input_version, args.input_wav, args.info)
 
         if args.save_midi:
             save_midi(midi_wave['midifile'], input_file, args.save_file)
