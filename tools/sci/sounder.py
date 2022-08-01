@@ -7,7 +7,6 @@
 # conda activate sounder
 # pip install python-rtmidi gooey
 
-# TODO: installer - command line
 # TODO: gooey: update widgets from each other (file chosen - change devices to play)
 # TODO: info: channels (also for midi)
 # TODO: sci1: choose device to save_midi

@@ -29,7 +29,7 @@
 
 
   ; run at end
-  !define MUI_FINISHPAGE_RUN "$INSTDIR\Sounder.exe"
+  !define MUI_FINISHPAGE_RUN "$INSTDIR\gui\sounder\Sounder.exe"
 
 
 ;--------------------------------
@@ -61,7 +61,7 @@ Section "Sounder" SecMain
   SetOutPath "$INSTDIR"
 
   ;ADD YOUR OWN FILES HERE...
-  File /r "dist\Sounder\*"
+  File /r "dist\*"
 
   ;Store installation folder
   WriteRegStr HKCU "Software\Sounder" "" $INSTDIR
@@ -69,17 +69,26 @@ Section "Sounder" SecMain
   ;Create uninstaller
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
+
+  ; create .bat file to run cli
+  FileOpen $0 "$INSTDIR\cli\sounder\sounder.bat" w
+  FileWrite $0 '"$INSTDIR\cli\sounder\sounder.exe" --help$\r$\n'
+  FileWrite $0 'pause$\r$\n'
+  FileClose $0
+
   ;create start-menu items
   CreateDirectory "$SMPROGRAMS\Sounder"
   CreateShortCut "$SMPROGRAMS\Sounder\Uninstall.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0
-  CreateShortCut "$SMPROGRAMS\Sounder\Sounder.lnk" "$INSTDIR\Sounder.exe" "" "$INSTDIR\Sounder.exe" 0
+  CreateShortCut "$SMPROGRAMS\Sounder\Sounder (Command Line).lnk" "$INSTDIR\cli\sounder\Sounder.bat" "" "$INSTDIR\cli\sounder\Sounder.exe" 0
+  CreateShortCut "$SMPROGRAMS\Sounder\Sounder.lnk" "$INSTDIR\gui\sounder\Sounder.exe" "" "$INSTDIR\gui\sounder\Sounder.exe" 0
 
 
 SectionEnd
 
 Section "Create desktop shortcut" SecDesktop
   ;create desktop shortcut
-  CreateShortCut "$DESKTOP\Sounder.lnk" "$INSTDIR\Sounder.exe" ""
+  CreateShortCut "$DESKTOP\Sounder.lnk" "$INSTDIR\gui\sounder\Sounder.exe" ""
+  CreateShortCut "$DESKTOP\Sounder (Command Line).lnk" "$INSTDIR\cli\sounder\Sounder.bat" "" "$INSTDIR\gui\sounder\Sounder.exe"
 SectionEnd
 
 
@@ -88,7 +97,7 @@ SectionEnd
 
   ;Language strings
   LangString DESC_SecMain ${LANG_ENGLISH} "Sounder core component."
-  LangString DESC_SecDesktop ${LANG_ENGLISH} "Create a desktop shortcut for Sounder."
+  LangString DESC_SecDesktop ${LANG_ENGLISH} "Create desktop shortcuts for Sounder."
 
   ;Assign language strings to sections
   !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
@@ -109,6 +118,7 @@ Section "Uninstall"
 
   ;Delete Desktop and Start Menu Shortcuts
   Delete "$DESKTOP\Sounder.lnk"
+  Delete "$DESKTOP\Sounder (Command Line).lnk"
   Delete "$SMPROGRAMS\Sounder\*.*"
   RmDir  "$SMPROGRAMS\Sounder"
 
