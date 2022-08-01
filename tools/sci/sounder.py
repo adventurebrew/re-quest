@@ -2,15 +2,19 @@
 # https://wiki.scummvm.org/index.php/SCI/Specifications/Sound/SCI0_Resource_Format
 # https://sciprogramming.com/community/index.php?topic=2072
 
-# TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
+# create environment with all packages:
+# conda create -n sounder -c conda-forge mido pyaudio wxpython python=3.10
+# conda activate sounder
+# pip install python-rtmidi gooey
 
-# TODO: logging ; add info logging for sci0 digital offset not zero
 # TODO: gooey: update widgets from each other (file chosen - change devices to play)
 # TODO: info: channels (also for midi)
-# TODO: gui: menu?
-# TODO: pyinstaller
 # TODO: sci1: choose device to save_midi
 # TODO: sci0: choose device to save_midi
+
+# TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
+# TODO: logging ; add info logging for sci0 digital offset not zero
+# TODO: gui: menu?
 
 # TODO: verify cue, loop in writing (sound.200)
 # TODO: debug adding digital sample to SCI1 file that hadn't such
@@ -25,15 +29,17 @@ import io
 import re
 import time
 import threading
+import functools
+import wave
 from pathlib import Path
 from enum import Flag, Enum
 from copy import deepcopy
 from ast import literal_eval
-import wave
 from glob import glob
 
 import mido
 import rtmidi  # pip install python-rtmidi
+import mido.backends.rtmidi
 from mido import MidiFile, MidiTrack
 from mido.midifiles.tracks import _to_abstime, _to_reltime
 import pyaudio
@@ -47,6 +53,10 @@ NUM_OF_CHANNELS = 16
 TICKS_PER_BIT = 30
 
 SCI1_DIGITAL_CHANNEL_MARKER = 0xfe
+
+# with PyInstaller, the print output isn't flushed - force it
+# TODO remove this when using logger
+print = functools.partial(print, flush=True)
 
 
 def read_le(stream, length=1):
@@ -504,19 +514,32 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
 def save_sci1(midi_wave, input_file, save_file):
     midifile = midi_wave['midifile']
 
-    # get devices information from midi information track (if exists - probably created by us, when reading a SCI0 file)
-    # TODO: take it from midi_wave['devices']
     devices = {}
-    for msg in midifile.tracks[0]:
-        if msg.type == 'device_name' and msg.name.startswith('Device '):
-            m = re.match(r'Device (.*) uses (\[.*)', msg.name)
-            if m:
-                try:
-                    device = SCI1_Devices[m.group(1)]
-                    channels = literal_eval(m.group(2))
-                    devices[device] = channels
-                except KeyError:
-                    print(f"SAVE SCI1+: Ignoring device {m.group(1)}, doesn't have a SCI1 counterpart")
+
+    for orig_device in midi_wave['devices']:
+        try:
+            device = SCI1_Devices[orig_device.name]
+            devices[device] = midi_wave['devices'][orig_device]
+        except KeyError:
+            print(f"SAVE SCI1: Ignoring device {orig_device.name}, doesn't have a SCI1 counterpart")
+
+    # get devices information from midi information track (if exists - probably created by us, when reading a SCI0 file)
+    if not devices:
+        for msg in midifile.tracks[0]:
+            if msg.type == 'device_name' and msg.name.startswith('Device '):
+                m = re.match(r'Device (.*) uses (\[.*)', msg.name)
+                if m:
+                    try:
+                        device = SCI1_Devices[m.group(1)]
+                        channels = literal_eval(m.group(2))
+                        devices[device] = channels
+                    except KeyError:
+                        print(f"SAVE SCI1+: Ignoring device {m.group(1)}, doesn't have a SCI1 counterpart")
+
+    # SCI1 makes heavy use of GM - add such track if doesn't exist
+    if SCI1_Devices.GM not in devices and SCI1_Devices.MT_32 in devices:
+        devices[SCI1_Devices.GM] = devices[SCI1_Devices.MT_32]
+        print(f"SAVE SCI1+: Adding GM device, as duplication of MT-32")
 
     # unify all messages from all tracks; change time from delta to absolute
     messages = []
@@ -582,7 +605,10 @@ def save_sci1(midi_wave, input_file, save_file):
         # write header
         for device in devices:
             write_le(f, device.value)
-            device_channels = [c['ch'] - 1 for c in devices[device]]
+            try:
+                device_channels = [c['ch'] - 1 for c in devices[device]]
+            except TypeError:
+                device_channels = [c - 1 for c in devices[device]]
             for channel in device_channels:
                 write_le(f, 0x0, 2)  # unknown
                 write_le(f, channel_offsets[channel] + header_size, 2)
@@ -751,8 +777,11 @@ def get_all_devices():
            'show_time_remaining': True,
            'hide_time_remaining_on_complete': True,
        },
+       show_stop_warning=False,
        default_size=(600, 800),
-       program_description="Sierra SCI 'snd' manager - load, save and play\n(run with '--help' for command line interface)")
+       program_name='Sounder',
+       program_description="Sierra SCI 'snd' manager - load, save and play\n(run with '--help' for command line interface)",
+       )
 def main():
     parser = GooeyParser(description="Sierra SCI 'snd' manager - load, save and play",
                          epilog='GUI starts if no arguments are supplied')
