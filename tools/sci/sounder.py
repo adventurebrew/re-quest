@@ -519,7 +519,8 @@ def save_sci1(midi_wave, input_file, save_file):
     for orig_device in midi_wave['devices']:
         try:
             device = SCI1_Devices[orig_device.name]
-            devices[device] = midi_wave['devices'][orig_device]
+            channels = midi_wave['devices'][orig_device]
+            devices[device] = [c if c != 'digital' else SCI1_DIGITAL_CHANNEL_MARKER+1 for c in channels]
         except KeyError:
             print(f"SAVE SCI1: Ignoring device {orig_device.name}, doesn't have a SCI1 counterpart")
 
@@ -811,16 +812,8 @@ def main():
                             help="select MIDI port to use, instead of the default one")
 
     save_group = parser.add_argument_group("Save options", )
-    save_type_group = save_group.add_mutually_exclusive_group(gooey_options={
-        'title': 'Save as',
-        'initial_selection': 0,
-    })
-    save_type_group.add_argument("--dont_save", action='store_true', help="don't save (default)", )
-    save_type_group.add_argument("--save_midi", "-m", action='store_true', help="save as .mid file")
-    save_type_group.add_argument("--save_sci0_early", "-e", action='store_true',
-                                 help="save as sound. SCI0 (EARLY) file")
-    save_type_group.add_argument("--save_sci0", "-0", action='store_true', help="save as sound. SCI0 file")
-    save_type_group.add_argument("--save_sci1", "-1", action='store_true', help="save as .snd SCI1+ file")
+    save_group.add_argument("--save", "-s", choices=['SCI0_EARLY', 'SCI0', 'SCI1+', 'MIDI'],
+                             help="save as format (default: don't save)", widget='ReadOnlyDropdown')
     save_group.add_argument("--save_file",
                             help="saved file name (default: original name + 'snd' or + 'midi')",
                             widget="FileSaver")
@@ -854,14 +847,15 @@ def main():
 
         midi_wave = read_input(input_file, args.input_version, args.input_wav, args.info)
 
-        if args.save_midi:
-            save_midi(midi_wave['midifile'], input_file, args.save_file)
+        if args.save:
+            if args.save == "MIDI":
+                save_midi(midi_wave['midifile'], input_file, args.save_file)
 
-        if args.save_sci0 or args.save_sci0_early:
-            save_sci0(midi_wave, input_file, args.save_file, args.save_sci0_early)
+            if args.save in ["SCI0", "SCI0_EARLY"]:
+                save_sci0(midi_wave, input_file, args.save_file, args.save == 'SCI0_EARLY')
 
-        if args.save_sci1:
-            save_sci1(midi_wave, input_file, args.save_file)
+            if args.save == "SCI1+":
+                save_sci1(midi_wave, input_file, args.save_file)
 
         if args.play:
             play_midi(midi_wave, args.play_device, args.port, args.verbose)
