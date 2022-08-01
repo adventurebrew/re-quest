@@ -130,22 +130,6 @@ dmypy.json
 
 .idea
 
-resource.*
-install.*
-*.drv
-*.bat
-*.exe
-*.com
-*.inf
-*.ico
-version
-mt32*
-
-DEFAULT.CFG
-Manual.pdf
-game.ini
-readme.txt
-sq3.ini
 
 *.zip
 client_secrets.json
@@ -154,11 +138,5 @@ google_drive_file_id.txt
 .*swp
 .*swo
 
-qfg1vga/*
-!qfg1vga/PATCHES
-!qfg1vga/src
-
-broken_sword1/*.patch
-broken_sword1/video/intro.smk
 
 OLD

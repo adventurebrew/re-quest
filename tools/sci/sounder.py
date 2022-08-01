@@ -7,6 +7,7 @@
 # conda activate sounder
 # pip install python-rtmidi gooey
 
+# TODO: installer - command line
 # TODO: gooey: update widgets from each other (file chosen - change devices to play)
 # TODO: info: channels (also for midi)
 # TODO: sci1: choose device to save_midi
@@ -15,6 +16,7 @@
 # TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
 # TODO: logging ; add info logging for sci0 digital offset not zero
 # TODO: gui: menu?
+# TODO: gui: icons
 
 # TODO: verify cue, loop in writing (sound.200)
 # TODO: debug adding digital sample to SCI1 file that hadn't such
