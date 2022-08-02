@@ -13,7 +13,6 @@
 # TODO: sci0: choose device to save_midi
 
 # TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
-# TODO: logging ; add info logging for sci0 digital offset not zero
 # TODO: gui: menu?
 # TODO: gui: icons
 
@@ -25,13 +24,13 @@
 # TODO: early: saving with digital behaves weird
 
 import sys
-import warnings
 import io
 import re
 import time
 import threading
 import functools
 import wave
+import logging
 from pathlib import Path
 from enum import Flag, Enum
 from copy import deepcopy
@@ -55,9 +54,33 @@ TICKS_PER_BIT = 30
 
 SCI1_DIGITAL_CHANNEL_MARKER = 0xfe
 
+debug = False
+
 # with PyInstaller, the print output isn't flushed - force it
-# TODO remove this when using logger
+# TODO check if can be removed, now that we're using logger
 print = functools.partial(print, flush=True)
+
+
+def setup_logger():
+    logger = logging.getLogger('sounder')
+    if debug:
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
+
+    logger_handler = logging.StreamHandler()
+    logger_handler.addFilter(lambda record: record.levelno != logging.INFO)
+    logger_handler.setFormatter(logging.Formatter('%(levelname)s:%(name)s:%(message)s'))
+    logger.addHandler(logger_handler)
+
+    logger_info_handler = logging.StreamHandler(sys.stdout)
+    logger_info_handler.addFilter(lambda record: record.levelno == logging.INFO)
+    logger.addHandler(logger_info_handler)
+
+    return logger
+
+
+logger = setup_logger()
 
 
 def read_le(stream, length=1):
@@ -112,7 +135,7 @@ class SCI1_Devices(Enum):
 
     @classmethod
     def _missing_(cls, number):
-        warnings.warn(f"Encountered new unknown SCI1 device {hex(number)}")
+        logger.warning(f"Encountered new unknown SCI1 device {hex(number)}")
         return cls(cls.UNKNOWN)
 
 
@@ -170,9 +193,8 @@ def read_messages(stream, size=None):
                 msg = mido.Message.from_bytes(event)
                 msg.time = delta
                 track.append(msg)
-            except ValueError as e:
-                print(e)
-                print('value error. status: ' + hex(status) + ". event: " + event.hex())
+            except ValueError:
+                logger.exception('value error. status: ' + hex(status) + ". event: " + event.hex())
     except EOFError:
         pass
 
@@ -188,7 +210,7 @@ def read_snd_file(p, input_version, info):
         else:
             order = ['SCI0', 'SCI0_EARLY', 'SCI1+']
         for version in order:
-            print(f'\n****   Trying {version}    *****')
+            logger.info(f'\n****   Trying {version}    *****')
             try:
                 return read_snd_file_with_version(p, version, info)
             except:
@@ -231,9 +253,9 @@ def read_sci0_digital(stream, info):
     read_le(stream, 10)  # waste offsets 34-43
     if info:
         if freq and length:
-            print(f'Digital sample - freq: {freq} Hz, length: {length / freq:.1f} sec ({length} bytes)')
+            logger.info(f'Digital sample - freq: {freq} Hz, length: {length / freq:.1f} sec ({length} bytes)')
         else:
-            print(f'Digital sample - something seems wrong - freq: {freq} Hz, length: ({length} bytes)')
+            logger.warning(f'Digital sample - something seems wrong - freq: {freq} Hz, length: ({length} bytes)')
     data = stream.read(length)
     return {'freq': freq, 'data': data}
 
@@ -246,7 +268,7 @@ def read_sci1_digital(stream, info):
     end = read_le(stream, 2)
     stream.seek(offset)
     if info:
-        print(f'Digital sample - freq: {freq} Hz, length: {length / freq:.1f} sec ({length} bytes)')
+        logger.info(f'Digital sample - freq: {freq} Hz, length: {length / freq:.1f} sec ({length} bytes)')
     data = stream.read(length)
     return {'freq': freq, 'data': data}
 
@@ -274,7 +296,7 @@ def save_wave(wave_dict, input_file, save_file):
             w.setsampwidth(1)
             w.setframerate(wave_dict['freq'])
             w.writeframes(wave_dict['data'])
-        print(f'Saved {save_file}')
+        logger.info(f'Saved {save_file}')
 
 
 def read_sci0_snd_file(stream, sci0_early, info):
@@ -284,13 +306,14 @@ def read_sci0_snd_file(stream, sci0_early, info):
     elif digital_sample_byte == 2:
         has_digital_sample = True
     else:
-        warnings.warn(f"File has unrecognizable digital sample byte: {digital_sample_byte}")
+        logger.warning(f"File has unrecognizable digital sample byte: {digital_sample_byte}")
         has_digital_sample = False
 
     devices = {}
     for ch in range(NUM_OF_CHANNELS):
         if has_digital_sample and ch == NUM_OF_CHANNELS - 1:
             last_non_digital_offset = read_be(stream, 2)  # note the big endian
+            logger.debug(f'SCI0: digital offset: {hex(last_non_digital_offset)}')
             if last_non_digital_offset == 0:
                 last_non_digital_offset = find_last_non_digital_offset(stream)
         else:
@@ -321,7 +344,7 @@ def read_sci0_snd_file(stream, sci0_early, info):
     for device in devices:
         info_track.append(mido.MetaMessage(type='device_name', name=f'Device {device.name} uses {devices[device]}'))
         if info:
-            print(f'Device {device.name} uses {devices[device]}')
+            logger.info(f'Device {device.name} uses {devices[device]}')
     if len(devices.get(SCI0_Devices.SPEAKER, [])) > 1:
         sys.exit("\nERROR: Speaker has more than 1 channel; probably SCI sound version mismatch or corrupted file")
     midifile.tracks.append(info_track)
@@ -364,7 +387,7 @@ def read_sci1_snd_file(stream, info):
 
         else:
             # digital track, not supported
-            print("encountered digital track, not supported (also ignored by ScummVM and SCICompanion)")
+            logger.info("encountered digital track, not supported (also ignored by ScummVM and SCICompanion)")
             _ = read_le(stream, 6)
             assert read_le(stream) == 0xff
 
@@ -387,7 +410,7 @@ def read_sci1_snd_file(stream, info):
                     raise ValueError("SCI1 channels - channel repeated with different values")
         devices[SCI1_Devices(track)] = channel_nums
         if info:
-            print(f'Device {SCI1_Devices(track).name} uses channels: {channel_nums}')
+            logger.info(f'Device {SCI1_Devices(track).name} uses channels: {channel_nums}')
 
     wave = None
     for channel in channels.values():
@@ -441,14 +464,15 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
                 device = SCI0_Early_Devices[orig_device.name]
                 devices[device] = [c - 1 for c in midi_wave['devices'][orig_device] if c != 'digital']
             except KeyError:
-                print(f"SAVE SCI0 (EARLY): Ignoring device {orig_device}, doesn't have a SCI0 (EARLY) counterpart")
+                logger.info(
+                    f"SAVE SCI0 (EARLY): Ignoring device {orig_device}, doesn't have a SCI0 (EARLY) counterpart")
     else:
         for orig_device in midi_wave['devices']:
             try:
                 device = SCI0_Devices[orig_device.name]
                 devices[device] = [c - 1 for c in midi_wave['devices'][orig_device] if c != 'digital']
             except KeyError:
-                print(f"SAVE SCI0: Ignoring device {orig_device}, doesn't have a SCI0 counterpart")
+                logger.info(f"SAVE SCI0: Ignoring device {orig_device}, doesn't have a SCI0 counterpart")
 
     # prepare midi data first
     with io.BytesIO() as f:
@@ -457,8 +481,8 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
             messages = clean_stops(messages)
         for msg in messages:
             if not msg.is_meta:
-                # print('delay', get_sierra_delay_bytes(delta).hex())
-                # print('msg', msg.bin().hex())
+                logger.debug('delay: ' + get_sierra_delay_bytes(msg.time).hex())
+                logger.debug('msg:' + msg.bin().hex())
                 f.write(get_sierra_delay_bytes(msg.time))
                 f.write(msg.bin())
         midi_data = f.getvalue()
@@ -509,7 +533,7 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
             write_le(f, 0x0, 10)  # waste offsets 34-43
             f.write(digital['data'])
 
-    print(f'Saved {save_file}')
+    logger.info(f'Saved {save_file}')
 
 
 def save_sci1(midi_wave, input_file, save_file):
@@ -521,9 +545,9 @@ def save_sci1(midi_wave, input_file, save_file):
         try:
             device = SCI1_Devices[orig_device.name]
             channels = midi_wave['devices'][orig_device]
-            devices[device] = [c if c != 'digital' else SCI1_DIGITAL_CHANNEL_MARKER+1 for c in channels]
+            devices[device] = [c if c != 'digital' else SCI1_DIGITAL_CHANNEL_MARKER + 1 for c in channels]
         except KeyError:
-            print(f"SAVE SCI1: Ignoring device {orig_device.name}, doesn't have a SCI1 counterpart")
+            logger.info(f"SAVE SCI1: Ignoring device {orig_device.name}, doesn't have a SCI1 counterpart")
 
     # get devices information from midi information track (if exists - probably created by us, when reading a SCI0 file)
     if not devices:
@@ -536,12 +560,12 @@ def save_sci1(midi_wave, input_file, save_file):
                         channels = literal_eval(m.group(2))
                         devices[device] = channels
                     except KeyError:
-                        print(f"SAVE SCI1+: Ignoring device {m.group(1)}, doesn't have a SCI1 counterpart")
+                        logger.info(f"SAVE SCI1+: Ignoring device {m.group(1)}, doesn't have a SCI1 counterpart")
 
     # SCI1 makes heavy use of GM - add such track if doesn't exist
     if SCI1_Devices.GM not in devices and SCI1_Devices.MT_32 in devices:
         devices[SCI1_Devices.GM] = devices[SCI1_Devices.MT_32]
-        print(f"SAVE SCI1+: Adding GM device, as duplication of MT-32")
+        logger.info(f"SAVE SCI1+: Adding GM device, as duplication of MT-32")
 
     # unify all messages from all tracks; change time from delta to absolute
     messages = []
@@ -568,8 +592,8 @@ def save_sci1(midi_wave, input_file, save_file):
                     if not msg.is_meta and (msg.is_realtime or msg.channel == ch):
                         delta = msg.time - timer
                         timer = msg.time
-                        # print('delay', get_sierra_delay_bytes(delta).hex())
-                        # print('msg', msg.bin().hex())
+                        logger.debug('delay: ' + get_sierra_delay_bytes(delta).hex())
+                        logger.debug('msg:' + msg.bin().hex())
                         channels_stream.write(get_sierra_delay_bytes(delta))
                         channels_stream.write(msg.bin())
             else:
@@ -586,7 +610,7 @@ def save_sci1(midi_wave, input_file, save_file):
 
     # make devices table, if doesn't exists
     if channel_nums and not devices:
-        print(
+        logger.info(
             "Couldn't find devices information in first track; using arbitrary values. Contact Zvika if you wish to have control over this")
         channels = [{'ch': ch + 1} for ch in channel_nums]
         devices[SCI1_Devices.GM] = channels
@@ -621,7 +645,7 @@ def save_sci1(midi_wave, input_file, save_file):
 
         # write channels data
         f.write(channels_bytes)
-    print(f'Saved {save_file}')
+    logger.info(f'Saved {save_file}')
 
 
 def read_wav_file(input_wav):
@@ -650,7 +674,7 @@ def read_input(input_file, input_version, input_wav, info):
     else:
         raise NameError("Received unsupported file (it should start with sound. or end with .mid/.snd) " + input_file)
     if info:
-        print(f"Midi length: {result['midifile'].length:.1f} seconds")
+        logger.info(f"Midi length: {result['midifile'].length:.1f} seconds")
 
     if input_wav:
         result['wave'] = read_wav_file(input_wav)
@@ -660,7 +684,7 @@ def read_input(input_file, input_version, input_wav, info):
 def show_progress(length):
     for i in range(round(length)):
         time.sleep(1)
-        print(f'seconds: {i + 1}/{length}')
+        logger.info(f'seconds: {i + 1}/{length}')
 
 
 def select_channels(midifile, channels):
@@ -707,22 +731,22 @@ def play_midi(midi_wave, play_device, port=None, verbose=False):
     if port is None:
         port = mido.open_output()
     else:
-        print(f'Using {port} for MIDI playback')
+        logger.info(f'Using {port} for MIDI playback')
         port = mido.open_output(port)
 
     channels = get_midi_channels_of_device(play_device, midi_wave['devices'])
     midifile = select_channels(midi_wave['midifile'], channels)
 
-    print(f'Playing {play_device}, length {midifile.length:.1f} seconds')
+    logger.info(f'Playing {play_device}, length {midifile.length:.1f} seconds')
 
     if gooey_misc.gooey_enabled:
-        print(f'seconds: {0}/{round(midifile.length)}')
+        logger.info(f'seconds: {0}/{round(midifile.length)}')
         progress_thread = threading.Thread(target=show_progress, args=(midifile.length,))
         progress_thread.start()
 
     for msg in midifile.play():
         if verbose:
-            print(msg)
+            logger.info(msg)
         port.send(msg)
 
 
@@ -751,7 +775,7 @@ def save_midi(midifile, input_file, save_file):
     if not save_file:
         save_file = input_file + ".mid"
     midifile_copy.save(save_file)
-    print("Saved " + save_file)
+    logger.info("Saved " + save_file)
 
 
 gooey_misc.run_gooey_only_if_no_args()
@@ -814,7 +838,7 @@ def main():
 
     save_group = parser.add_argument_group("Save options", )
     save_group.add_argument("--save", "-s", choices=['SCI0_EARLY', 'SCI0', 'SCI1+', 'MIDI'],
-                             help="save as format (default: don't save)", widget='ReadOnlyDropdown')
+                            help="save as format (default: don't save)", widget='ReadOnlyDropdown')
     save_group.add_argument("--save_file",
                             help="saved file name (default: original name + 'snd' or + 'midi')",
                             widget="FileSaver")
@@ -844,7 +868,7 @@ def main():
     # run over all supplied input_files (list), and open all '*' expressions
     for input_file in [item for sublist in args.input_files for item in glob(sublist)]:
         if args.info:
-            print(f'\n{input_file}\t{args.input_version}')
+            logger.info(f'\n{input_file}\t{args.input_version}')
 
         midi_wave = read_input(input_file, args.input_version, args.input_wav, args.info)
 
