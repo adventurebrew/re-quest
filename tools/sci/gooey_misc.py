@@ -90,3 +90,53 @@ def args_replace_underscore_with_spaces():
         return orig_action_to_json(action, widget, options)
 
     argparse_to_json.action_to_json = action_to_json
+
+
+def find_gooey_object(name, somewhere):
+    for child in somewhere.TopLevelParent.configs[0].Children:
+        try:
+            if child.info['id'] == name:
+                return child
+        except:
+            pass
+    return None
+
+
+def my_widget_updates(cb):
+    try:
+        def update_play_options(self):
+            input_files_obj = find_gooey_object('input_files', self)
+            input_version_obj = find_gooey_object('--input_version', self)
+            play_device_obj = find_gooey_object('--play_device', self)
+            if input_files_obj and input_version_obj and play_device_obj:
+                input_files = input_files_obj.widget.getValue()
+                input_version = input_version_obj.widget.GetValue()
+                options = cb(input_files, input_version)
+                if options:
+                    play_device_obj.setOptions(options)
+
+        # combobox:
+        def dropdown_init(self, parent, item):
+            orig_init(self, parent, item)
+            self.Bind(wx.EVT_COMBOBOX, dropdown_cb)
+
+        def dropdown_cb(event):
+            if event.EventObject.Parent.info['id'] == '--input_version':
+                update_play_options(event.EventObject)
+
+        from gooey.gui.components.widgets.dropdown import Dropdown
+        orig_init = Dropdown.__init__
+        Dropdown.__init__ = dropdown_init
+
+        # chooser:
+        def processResult(self, result):
+            orig_processResult(self, result)
+            if self.Parent.info['id'] == 'input_files':
+                update_play_options(self)
+
+        from gooey.gui.components.widgets.core.chooser import Chooser
+        orig_processResult = Chooser.processResult
+        Chooser.processResult = processResult
+
+    except:
+        pass

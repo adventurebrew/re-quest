@@ -7,7 +7,6 @@
 # conda activate sounder
 # pip install python-rtmidi gooey
 
-# TODO: gooey: update widgets from each other (file chosen - change devices to play)
 # TODO: info: channels (also for midi)
 # TODO: sci1: choose device to save_midi
 # TODO: sci0: choose device to save_midi
@@ -778,21 +777,36 @@ def save_midi(midifile, input_file, save_file):
     logger.info("Saved " + save_file)
 
 
-gooey_misc.run_gooey_only_if_no_args()
-gooey_misc.add_read_only_dropdown()
-gooey_misc.force_english()
-gooey_misc.progress_bar_dont_display_remaining_time()
-
-
-# gooey_misc.args_replace_underscore_with_spaces()  # TODO: it makes FileChooser to ignore wildcards
-
-
 def get_all_devices():
     devices = sorted(list(
         set([d.name for d in SCI0_Early_Devices] + [d.name for d in SCI0_Devices] + [d.name for d in SCI1_Devices])))
     devices.remove('UNKNOWN')
     devices.insert(0, 'ALL CHANNELS IN FILE')
     return devices
+
+
+def get_sound_devices_in_file(input_file, input_version):
+    p = Path(input_file)
+    if p.suffix.lower() == ".mid":
+        return ['ALL CHANNELS IN FILE']
+    try:
+        logging.disable(logging.CRITICAL)  # disable all loggers, as this check should be silent
+        midi_wave = read_snd_file(p, input_version, info=False)
+        logging.disable(logging.NOTSET)  # returns all loggers to normal
+        return ['ALL CHANNELS IN FILE'] + [k.name for k in midi_wave['devices'].keys()]
+    except:
+        pass
+    return get_all_devices()
+
+
+gooey_misc.run_gooey_only_if_no_args()
+gooey_misc.add_read_only_dropdown()
+gooey_misc.force_english()
+gooey_misc.progress_bar_dont_display_remaining_time()
+gooey_misc.my_widget_updates(get_sound_devices_in_file)
+
+
+# gooey_misc.args_replace_underscore_with_spaces()  # TODO: it makes FileChooser to ignore wildcards
 
 
 @Gooey(clear_before_run=True,
@@ -832,7 +846,7 @@ def main():
     play_group.add_argument("--verbose", "-v", action='store_true', help="show midi messages as they are played")
     play_group.add_argument("--play_device", choices=get_all_devices(), widget="ReadOnlyDropdown",
                             default='ALL CHANNELS IN FILE',
-                            help="select which device to play. note: this list also shows irrelevant devices. run with '--info' to see which devices actually exist in this file")
+                            help="select which device to play")
     play_group.add_argument("--port", "-t", choices=mido.get_output_names(), widget="ReadOnlyDropdown",
                             help="select MIDI port to use, instead of the default one")
 
