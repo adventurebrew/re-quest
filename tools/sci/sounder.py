@@ -10,10 +10,12 @@
 # TODO: info: channels (also for midi)
 # TODO: sci1: choose device to save_midi
 # TODO: sci0: choose device to save_midi
+# TODO: error on missing file
 
 # TODO: gui: menu?
 # TODO: gui: icons
 
+# TODO: sci1: channels warning (sq6/104.snd)
 # TODO: verify cue, loop in writing (sound.200)
 # TODO: debug adding digital sample to SCI1 file that hadn't such
 # TODO: verify converting MIDI to SND (first 10 bytes, etc.)
@@ -86,6 +88,7 @@ logger = setup_logger()
 def read_le(stream, length=1):
     b = stream.read(length)
     if b == b'':
+        logger.debug(f'read_le: {stream.tell()}\t EOF')
         raise EOFError
     return int.from_bytes(b, byteorder='little')
 
@@ -93,6 +96,7 @@ def read_le(stream, length=1):
 def read_be(stream, length=1):
     b = stream.read(length)
     if b == b'':
+        logger.debug(f'read_be: {stream.tell()}\t EOF')
         raise EOFError
     return int.from_bytes(b, byteorder='big')
 
@@ -174,16 +178,22 @@ def read_messages(stream, size=None):
         while not read_enough():
             delta = 0
             d = read_le(stream)
+            logger.debug(f"read_messages: {stream.tell()}\t: d: {hex(d)}")
             while d == 0xf8:
                 delta += 240
                 d = read_le(stream)
-            assert d <= 0xef
+                logger.debug(f"read_messages: {stream.tell()}\t: loop d: {hex(d)}")
+            # assert d <= 0xef
+            if d >= 0xf0:
+                logger.warning(f'reading large time byte: {hex(d)}')
             delta += d
+            logger.debug(f"read_messages: {stream.tell()}\t: delta: {hex(delta)}")
 
             # status
             d = read_le(stream)
             if d >= 0x80:
                 status = d
+                logger.debug(f"read_messages: {stream.tell()}\t: status: {hex(d)}")
             else:
                 stream.seek(-1, io.SEEK_CUR)
 
@@ -192,10 +202,12 @@ def read_messages(stream, size=None):
             try:
                 msg = mido.Message.from_bytes(event)
                 msg.time = delta
+                logger.debug(f"read_messages: {stream.tell()}\t:  0x{event.hex()} \t, {msg}")
                 track.append(msg)
             except ValueError:
-                logger.exception('value error. status: ' + hex(status) + ". event: " + event.hex())
+                logger.exception('value error. status: ' + hex(status) + ". event: 0x" + event.hex())
     except EOFError:
+        logger.debug(f'read_messages: {stream.tell()}\t EOF')
         pass
 
     return track
@@ -205,7 +217,7 @@ def read_snd_file(p, input_version, info):
     if input_version != "AUTO_DETECT":
         return read_snd_file_with_version(p, input_version, info)
     else:
-        if p.suffix == '.snd':
+        if p.suffix.lower() == '.snd':
             order = ['SCI1+', 'SCI0', 'SCI0_EARLY']
         else:
             order = ['SCI0', 'SCI0_EARLY', 'SCI1+']
@@ -223,7 +235,7 @@ def read_snd_file_with_version(p, input_version, info):
     assert stream.read(2) == SIERRA_SND_HEADER
     stream = io.BytesIO(stream.read())  # chop the first 2 bytes - it's only confusing for offsets
     if input_version.startswith('SCI0'):
-        return read_sci0_snd_file(stream, input_version == 'SCI0_EARLY', info)
+        return read_sci0_snd_file(stream, input_version, info)
     elif input_version == 'SCI1+':
         return read_sci1_snd_file(stream, info)
     else:
@@ -299,7 +311,8 @@ def save_wave(wave_dict, input_file, save_file):
         logger.info(f'Saved {save_file}')
 
 
-def read_sci0_snd_file(stream, sci0_early, info):
+def read_sci0_snd_file(stream, input_version, info):
+    sci0_early = input_version == 'SCI0_EARLY'
     digital_sample_byte = read_le(stream)
     if digital_sample_byte == 0:
         has_digital_sample = False
@@ -346,7 +359,7 @@ def read_sci0_snd_file(stream, sci0_early, info):
         if info:
             logger.info(f'Device {device.name} uses {devices[device]}')
     if len(devices.get(SCI0_Devices.SPEAKER, [])) > 1:
-        sys.exit("\nERROR: Speaker has more than 1 channel; probably SCI sound version mismatch or corrupted file")
+        raise ValueError("speaker has more than 1 channel; probably SCI sound version mismatch or corrupted file")
     midifile.tracks.append(info_track)
 
     if has_digital_sample:
@@ -357,7 +370,7 @@ def read_sci0_snd_file(stream, sci0_early, info):
         wave = None
     midifile.tracks.append(track)
 
-    return {'midifile': midifile, 'devices': devices, 'wave': wave}
+    return {'midifile': midifile, 'devices': devices, 'wave': wave, 'input_version': input_version}
 
 
 def read_sci1_snd_file(stream, info):
@@ -407,7 +420,7 @@ def read_sci1_snd_file(stream, info):
                 channels[ch] = channel
             else:
                 if channels[ch] != channel:
-                    raise ValueError("SCI1 channels - channel repeated with different values")
+                    logger.warning(f"SCI1 channels - channel {ch} repeated with different values")
         devices[SCI1_Devices(track)] = channel_nums
         if info:
             logger.info(f'Device {SCI1_Devices(track).name} uses channels: {channel_nums}')
@@ -431,7 +444,7 @@ def read_sci1_snd_file(stream, info):
             midtrack = read_messages(stream, channel['size'] - 2)  # we already read channel_number, poly_and_prio
             midifile.tracks.append(midtrack)
 
-    return {'midifile': midifile, 'devices': devices, 'wave': wave}
+    return {'midifile': midifile, 'devices': devices, 'wave': wave, 'input_version': 'SCI1+'}
 
 
 def clean_stops(messages):
@@ -698,7 +711,7 @@ def read_input(input_file, input_version, input_wav, info):
     if p.suffix.lower() == '.mid':
         midifile = read_midi_file(p)
         result = {'midifile': midifile, 'wave': None}
-    elif p.suffix.lower() == '.snd' or p.stem.startswith('sound'):
+    elif p.suffix.lower() == '.snd' or p.stem.lower().startswith('sound'):
         result = read_snd_file(p, input_version, info)
     else:
         raise NameError("Received unsupported file (it should start with sound. or end with .mid/.snd) " + input_file)
