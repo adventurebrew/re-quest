@@ -11,7 +11,6 @@
 # TODO: sci1: choose device to save_midi
 # TODO: sci0: choose device to save_midi
 
-# TODO: maybe use pydub / ffmpeg / https://pypi.org/project/av/ to support extra digital formats
 # TODO: gui: menu?
 # TODO: gui: icons
 
@@ -25,6 +24,7 @@
 import sys
 import io
 import re
+import tempfile
 import time
 import threading
 import functools
@@ -36,6 +36,7 @@ from copy import deepcopy
 from ast import literal_eval
 from glob import glob
 
+import av
 import mido
 import rtmidi  # pip install python-rtmidi
 import mido.backends.rtmidi
@@ -651,16 +652,45 @@ def read_wav_file(input_wav):
     result = {}
     with wave.open(input_wav, 'rb') as w:
         if w.getnchannels() != 1:
-            assert ValueError(
-                "Currently, wave file must have 1 channel (mono); (on the fly conversion will be supported later)")
+            assert ValueError("wave file must have 1 channel (mono)")
         if w.getsampwidth() != 1:
-            assert ValueError("Currently, wave file must be 8-bit; (on the fly conversion will be supported later)")
+            assert ValueError("wave file must be 8-bit")
         if w.getcomptype() != 'NONE':
-            assert ValueError(
-                "Currently, wave file must be uncompressed; (on the fly conversion will be supported later)")
+            assert ValueError("wave file must be uncompressed")
         result['freq'] = w.getframerate()
         result['data'] = w.readframes(w.getnframes())
+        if len(result['data']) > 0xffff:
+            result['data'] = result['data'][:0xfff0]
+            logger.info(
+                f"Wave file is too big ({w.getnframes() / result['freq']:.1f} sec), slicing it to {len(result['data']) / result['freq']:.1f} sec")
     return result
+
+
+def convert_audio_to_low_wav(input_file, output_file, layout='mono'):
+    input_container = av.open(input_file)
+
+    if input_container.streams.audio[0].codec_context.rate >= 22000:
+        rate = 22000
+    else:
+        rate = 11000
+
+    output_container = av.open(output_file, 'w')
+    output_stream = output_container.add_stream('pcm_u8', rate, layout=layout)
+
+    resampler = av.audio.resampler.AudioResampler('u8p', layout, rate)
+
+    for frame in input_container.decode(audio=0):
+        out_frames = resampler.resample(frame)
+        for out_frame in out_frames:
+            for packet in output_stream.encode(out_frame):
+                output_container.mux(packet)
+
+    # Flush stream
+    for packet in output_stream.encode():
+        output_container.mux(packet)
+
+    output_container.close()
+    return output_file
 
 
 def read_input(input_file, input_version, input_wav, info):
@@ -676,7 +706,18 @@ def read_input(input_file, input_version, input_wav, info):
         logger.info(f"Midi length: {result['midifile'].length:.1f} seconds")
 
     if input_wav:
-        result['wave'] = read_wav_file(input_wav)
+        try:
+            result['wave'] = read_wav_file(input_wav)
+        except:
+            logger.info("Audio file isn't an 8 bit .wav file; trying to convert")
+            _, temp_wav_file = tempfile.mkstemp(suffix='.wav')
+            input_wav = convert_audio_to_low_wav(input_wav, temp_wav_file)
+            result['wave'] = read_wav_file(input_wav)
+            try:
+                Path(input_wav).unlink()
+            except:
+                pass
+
     return result
 
 
@@ -860,12 +901,12 @@ def main():
     digital_group = parser.add_argument_group("Digital sample options",
                                               "Optional related to digital sample (if exists), or adding one")
     digital_group.add_argument("--input_wav",
-                               help="add file's contents as digital sample, or replace existing one",
+                               help="add file's contents as digital sample, or replace existing one (can be any audio/video file)",
                                widget="FileChooser", gooey_options={
             'wildcard':
-                'Wave files (*.wav)|*.wav|'
-                # TODO: all audio files
-                'All Files (*.*)|*.*',
+                'All Files (*.*)|*.*|'
+                'Wave files (*.wav)|*.wav',
+            # TODO: all audio files?
         })
     digital_group.add_argument("--play_wav", action='store_true', help="play the digital sample")
     digital_group.add_argument("--save_wav", action='store_true', help="save the digital sample as .wav file")

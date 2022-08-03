@@ -102,6 +102,9 @@ def find_gooey_object(name, somewhere):
     return None
 
 
+#### from down here, code specific for sounder
+
+
 def my_widget_updates(cb):
     try:
         def update_play_options(self):
