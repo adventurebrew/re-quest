@@ -7,7 +7,6 @@
 # conda activate sounder
 # pip install python-rtmidi gooey
 
-# TODO: choose device to save_midi
 # TODO: gui: menu?
 # TODO: gui: icons
 
@@ -389,6 +388,9 @@ def read_sci0_snd_file(stream, input_version, info):
 
 def read_sci1_snd_file(stream, info):
     midifile = MidiFile(ticks_per_beat=TICKS_PER_BIT)
+    info_track = MidiTrack()
+    info_track.append(mido.MetaMessage(type='track_name', name='MIDI_SCI1_HEADER'))
+
     device_tracks = {}
     while True:
         track_type = read_le(stream)
@@ -437,8 +439,11 @@ def read_sci1_snd_file(stream, info):
                 if channels[ch] != channel:
                     logger.warning(f"SCI1 channels - channel {ch} repeated with different values")
         devices[SCI1_Devices(track)] = channel_nums
+        msg = f"Device {SCI1_Devices(track).name} uses channels: {[c + 1 if c != 'digital' else c for c in channel_nums]}"
+        info_track.append(mido.MetaMessage(type='device_name', name=msg))
         if info:
-            logger.info(f"Device {SCI1_Devices(track).name} uses channels: {[c + 1 if c != 'digital' else c for c in channel_nums]}")
+            logger.info(msg)
+    midifile.tracks.append(info_track)
 
     wave = None
     for channel in channels.values():
@@ -923,7 +928,10 @@ def read_midi_file(p):
     return midifile
 
 
-def save_midi(midifile, input_file, save_file):
+def save_midi(midi_wave, input_file, save_file, save_midi_device):
+    channels = get_midi_channels_of_device(save_midi_device, midi_wave['devices'])
+    midifile = select_channels(midi_wave['midifile'], channels)
+
     midifile_copy = deepcopy(midifile)
     for track in midifile_copy.tracks:
         for i, msg in enumerate(track):
@@ -1017,6 +1025,9 @@ def main():
     save_group.add_argument("--save_file",
                             help="saved file name (default: original name + 'snd' or + 'midi')",
                             widget="FileSaver")
+    save_group.add_argument("--save_midi_device", choices=get_all_devices(), widget="ReadOnlyDropdown",
+                            default='ALL CHANNELS IN FILE',
+                            help="if saving as .mid, select which device's channels to save")
 
     digital_group = parser.add_argument_group("Digital sample options",
                                               "Optional related to digital sample (if exists), or adding one")
@@ -1055,7 +1066,7 @@ def main():
 
         if args.save:
             if args.save == "MIDI":
-                save_midi(midi_wave['midifile'], input_file, args.save_file)
+                save_midi(midi_wave, input_file, args.save_file, args.save_midi_device)
 
             if args.save in ["SCI0", "SCI0_EARLY"]:
                 save_sci0(midi_wave, input_file, args.save_file, args.save == 'SCI0_EARLY')

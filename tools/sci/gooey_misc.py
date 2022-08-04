@@ -112,6 +112,7 @@ def my_widget_updates(cb):
             find_gooey_object('--port', self).widget.Enable(False)
             find_gooey_object('--save_file', self).widget.Enable(False)
             find_gooey_object('--save_wav_file', self).widget.Enable(False)
+            find_gooey_object('--save_midi_device', self).widget.Enable(False)
 
         # add my events binding
         def layoutComponent(self):
@@ -131,12 +132,17 @@ def my_widget_updates(cb):
             input_files_obj = find_gooey_object('input_files', self)
             input_version_obj = find_gooey_object('--input_version', self)
             play_device_obj = find_gooey_object('--play_device', self)
-            if input_files_obj and input_version_obj and play_device_obj:
+            save_midi_device = find_gooey_object('--save_midi_device', self)
+            if input_files_obj and input_version_obj:
                 input_files = input_files_obj.widget.getValue()
                 input_version = input_version_obj.widget.GetValue()
                 options = cb(input_files, input_version)
                 if options:
-                    play_device_obj.setOptions(options)
+                    try:
+                        play_device_obj.setOptions(options)
+                        save_midi_device.setOptions(options)
+                    except:
+                        pass
 
         ####################################
 
@@ -146,6 +152,7 @@ def my_widget_updates(cb):
                 update_play_options(event.EventObject)
             elif event.EventObject.Parent.info['id'] == '--save':
                 find_gooey_object('--save_file', event.EventObject).widget.Enable(bool(event.Selection))
+                find_gooey_object('--save_midi_device', event.EventObject).widget.Enable(event.String == "MIDI")
 
         # file chooser
         def text_cb(event):

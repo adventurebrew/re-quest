@@ -84,7 +84,7 @@ class Test(TestCase):
                     if p not in ignored_list:
                         with self.assertNoLogs('sounder', level='ERROR'):
                             midi_wave = read_snd_file(p, 'AUTO_DETECT', info=False)
-                            save_midi(midi_wave['midifile'], p, save_file)
+                            save_midi(midi_wave, p, save_file, save_midi_device='ALL CHANNELS IN FILE')
                             read_midi_file(Path(save_file))
         try:
             Path(save_file).unlink()
