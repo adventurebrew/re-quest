@@ -7,7 +7,6 @@
 # conda activate sounder
 # pip install python-rtmidi gooey
 
-# TODO: info: channels (also for midi)
 # TODO: sci1: choose device to save_midi
 # TODO: sci0: choose device to save_midi
 
@@ -823,6 +822,9 @@ def read_input(input_file, input_version, input_wav, info):
     else:
         raise NameError("Received unsupported file (it should start with sound. or end with .mid/.snd) " + input_file)
     if info:
+        messages = mido.merge_tracks(result['midifile'].tracks)
+        channel_nums = sorted(list(set([m.channel for m in messages if not m.is_realtime and not m.is_meta])))
+        logger.info(f"Channels actually used in messages: {[c + 1 for c in channel_nums]}")
         logger.info(f"Midi length: {result['midifile'].length:.1f} seconds")
 
     if input_wav:
