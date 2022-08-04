@@ -17,13 +17,12 @@
 
 # TODO: get rid of c['ch'] vs `c`
 # TODO: sci1: channels warning (sq6/104.snd)
+# TODO: sci0: debug add sample to sq3/sound.102
 # TODO: sci0: understand sq3, sound.071
 # TODO: verify cue, loop in writing (sound.200)
 # TODO: debug adding digital sample to SCI1 file that hadn't such
-# TODO: verify converting MIDI to SND (first 10 bytes, etc.)
 # TODO: The MT-32 always plays channel 9 (https://sciprogramming.com/community/index.php?topic=2074.0)
 # TODO: sci0: write adlib - voices?
-# TODO: early: saving with digital behaves weird
 
 import sys
 import io
@@ -199,7 +198,10 @@ def read_messages(stream, size=None):
             else:
                 stream.seek(-1, io.SEEK_CUR)
 
-            length = get_event_length(status) - 1
+            try:
+                length = get_event_length(status) - 1
+            except UnboundLocalError:
+                raise ValueError("Running status, but without previous status")
             event = status.to_bytes(1, byteorder='little') + stream.read(length)
             try:
                 msg = mido.Message.from_bytes(event)
@@ -316,6 +318,7 @@ def save_wave(wave_dict, input_file, save_file):
 def read_sci0_snd_file(stream, input_version, info):
     sci0_early = input_version == 'SCI0_EARLY'
     digital_sample_byte = read_le(stream)
+    logger.debug(f'read_sci0_snd_file: digital_sample_byte : {hex(digital_sample_byte)}')
     if digital_sample_byte == 0:
         has_digital_sample = False
     elif digital_sample_byte == 2:
@@ -324,35 +327,42 @@ def read_sci0_snd_file(stream, input_version, info):
         logger.warning(f"File has unrecognizable digital sample byte: {digital_sample_byte}")
         has_digital_sample = False
 
+    if sci0_early and has_digital_sample:
+        # spec isn't clear
+        # I *assume* that there isn't a digital offset in the channels
+        last_non_digital_offset = find_last_non_digital_offset(stream)
+
     devices = {}
     for ch in range(NUM_OF_CHANNELS):
-        if has_digital_sample and ch == NUM_OF_CHANNELS - 1:
-            last_non_digital_offset = read_be(stream, 2)  # note the big endian
-            logger.debug(f'SCI0: digital offset: {hex(last_non_digital_offset)}')
-            if last_non_digital_offset == 0:
-                last_non_digital_offset = find_last_non_digital_offset(stream)
-        else:
-            if sci0_early:
-                b = read_le(stream)
-                voices = b // 16
-                hardware = SCI0_Early_Devices(b % 16)
-                logger.debug(f'read_sci0_snd_file: {stream.tell()} \t : 0x{b} - voices: {voices} , hw: {hardware}')
-                if hardware:
-                    hardware |= SCI0_Early_Devices.MT_32
-                if SCI0_Early_Devices.ADLIB in hardware and SCI0_Early_Devices.CONTROL_CHANNEL in hardware:
-                    # according to Ravi's spec, and ScummVM adlib driver, ADLIB ignores the channel if it's also a CONTROL
-                    hardware &= ~SCI0_Early_Devices.ADLIB
-                possible_devices = SCI0_Early_Devices
+        if not sci0_early:
+            if has_digital_sample and ch == NUM_OF_CHANNELS - 1:
+                last_non_digital_offset = read_be(stream, 2)  # note the big endian
+                logger.debug(f'read_sci0_snd_file: digital offset: {hex(last_non_digital_offset)}')
+                if last_non_digital_offset == 0:
+                    last_non_digital_offset = find_last_non_digital_offset(stream)
             else:
                 voices = read_le(stream)
                 hardware = SCI0_Devices(read_le(stream))
                 possible_devices = SCI0_Devices
+        else:
+            # sci0_early
+            b = read_le(stream)
+            voices = b // 16
+            hardware = SCI0_Early_Devices(b % 16)
+            logger.debug(f'read_sci0_snd_file: {stream.tell()} \t : 0x{b} - voices: {voices} , hw: {hardware}')
             if hardware:
-                for device in possible_devices:
-                    if device in hardware:
-                        channels = devices.get(device, [])
-                        channels.append({'ch': ch, 'voices': voices})
-                        devices[device] = channels
+                hardware |= SCI0_Early_Devices.MT_32
+            if SCI0_Early_Devices.ADLIB in hardware and SCI0_Early_Devices.CONTROL_CHANNEL in hardware:
+                # according to Ravi's spec, and ScummVM adlib driver, ADLIB ignores the channel if it's also a CONTROL
+                hardware &= ~SCI0_Early_Devices.ADLIB
+            possible_devices = SCI0_Early_Devices
+
+        if hardware:
+            for device in possible_devices:
+                if device in hardware:
+                    channels = devices.get(device, [])
+                    channels.append({'ch': ch, 'voices': voices})
+                    devices[device] = channels
 
     if not devices:
         logger.warning("No devices information found")
@@ -407,7 +417,8 @@ def read_sci1_snd_file(stream, info):
 
         else:
             # digital track, not supported
-            logger.info("encountered so called 'digital track', not supported (also ignored by ScummVM and SCICompanion)")
+            logger.info(
+                "encountered so called 'digital track', not supported (also ignored by ScummVM and SCICompanion)")
             _ = read_le(stream, 6)
             assert read_le(stream) == 0xff
 
@@ -528,8 +539,12 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
                 b = voices * 16
                 hw = SCI0_Early_Devices(0)
                 for device in devices:
-                    if ch in [c['ch'] for c in devices[device]] and device != SCI0_Early_Devices.MT_32:
-                        hw |= device
+                    try:
+                        if ch in [c['ch'] for c in devices[device]] and device != SCI0_Early_Devices.MT_32:
+                            hw |= device
+                    except TypeError:
+                        if ch in [c for c in devices[device]] and device != SCI0_Early_Devices.MT_32:
+                            hw |= device
                 write_le(f, b + hw.value)
             else:
                 # regular SCI0
@@ -739,10 +754,10 @@ def save_sci1(midi_wave, input_file, save_file):
                 # "digital track"
                 # I have no idea what it does, and what's the meaning of    0x4b    0x0     0x0     0x0     0x0     0x0
                 # but 124 out of 129 sound files in SQ6 have these numbers:
-                write_le(f, 0xf0)   # digital track marker
+                write_le(f, 0xf0)  # digital track marker
                 write_le(f, 0x4b)
                 write_le(f, 0x0, 5)
-                write_le(f, 0xff)   # end of "channel"
+                write_le(f, 0xff)  # end of "channel"
         write_le(f, 0xff)
         assert f.tell() == 2 + header_size  # 2 is the SIERRA_SND_HEADER
 

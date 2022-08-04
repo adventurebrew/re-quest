@@ -112,8 +112,10 @@ class Test(TestCase):
             for game in kind.glob('*'):
                 for p in game.glob('*'):
                     if p not in ignored_list:
+                        print(p)
                         with self.assertNoLogs('sounder', level='ERROR'):
                             midi_wave = read_input(p, 'AUTO_DETECT', str(audio_file.absolute()), info=False)
+
                             save_sci0(midi_wave, p, save_file, is_early=True)
                             read_snd_file(Path(save_file), 'AUTO_DETECT', info=False)
 
