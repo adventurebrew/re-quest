@@ -107,6 +107,26 @@ def find_gooey_object(name, somewhere):
 
 def my_widget_updates(cb):
     try:
+        def default_disables(self):
+            find_gooey_object('--play_device', self).widget.Enable(False)
+            find_gooey_object('--port', self).widget.Enable(False)
+            find_gooey_object('--save_file', self).widget.Enable(False)
+            find_gooey_object('--save_wav_file', self).widget.Enable(False)
+
+        # add my events binding
+        def layoutComponent(self):
+            self.Bind(wx.EVT_COMBOBOX, dropdown_cb)
+            self.Bind(wx.EVT_CHECKBOX, checkbox_cb)
+            self.Bind(wx.EVT_TEXT, text_cb)
+            default_disables(self)
+            orig_layoutComponent(self)
+
+        from gooey.gui.containers.application import GooeyApplication
+        orig_layoutComponent = GooeyApplication.layoutComponent
+        GooeyApplication.layoutComponent = layoutComponent
+
+        ####################################
+
         def update_play_options(self):
             input_files_obj = find_gooey_object('input_files', self)
             input_version_obj = find_gooey_object('--input_version', self)
@@ -118,28 +138,31 @@ def my_widget_updates(cb):
                 if options:
                     play_device_obj.setOptions(options)
 
-        # combobox:
-        def dropdown_init(self, parent, item):
-            orig_init(self, parent, item)
-            self.Bind(wx.EVT_COMBOBOX, dropdown_cb)
+        ####################################
 
+        # combobox:
         def dropdown_cb(event):
             if event.EventObject.Parent.info['id'] == '--input_version':
                 update_play_options(event.EventObject)
+            elif event.EventObject.Parent.info['id'] == '--save':
+                find_gooey_object('--save_file', event.EventObject).widget.Enable(bool(event.Selection))
 
-        from gooey.gui.components.widgets.dropdown import Dropdown
-        orig_init = Dropdown.__init__
-        Dropdown.__init__ = dropdown_init
+        # file chooser
+        def text_cb(event):
+            try:
+                if event.EventObject.Parent.Parent.Parent.info['id'] == 'input_files' and event.String:
+                    update_play_options(event.EventObject)
+            except AttributeError:
+                pass
 
-        # chooser:
-        def processResult(self, result):
-            orig_processResult(self, result)
-            if self.Parent.info['id'] == 'input_files':
-                update_play_options(self)
+        # checkbox:
+        def checkbox_cb(event):
+            if event.EventObject.Parent.info['id'] == '--play':
+                find_gooey_object('--play_device', event.EventObject).widget.Enable(bool(event.Selection))
+                find_gooey_object('--port', event.EventObject).widget.Enable(bool(event.Selection))
+            elif event.EventObject.Parent.info['id'] == '--save_wav':
+                find_gooey_object('--save_wav_file', event.EventObject).widget.Enable(bool(event.Selection))
 
-        from gooey.gui.components.widgets.core.chooser import Chooser
-        orig_processResult = Chooser.processResult
-        Chooser.processResult = processResult
 
     except:
         pass

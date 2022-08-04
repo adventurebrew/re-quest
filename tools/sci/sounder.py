@@ -7,9 +7,7 @@
 # conda activate sounder
 # pip install python-rtmidi gooey
 
-# TODO: sci1: choose device to save_midi
-# TODO: sci0: choose device to save_midi
-
+# TODO: choose device to save_midi
 # TODO: gui: menu?
 # TODO: gui: icons
 
