@@ -8,7 +8,6 @@ from tools.sci.sounder import *
 
 ignored_list = [
     Path(r'sound files/sci1/sq6/ignored'),
-    Path(r'sound files\sci0\sq3\sound.071'),
 ]
 
 test_files = Path('sound files')
@@ -112,7 +111,6 @@ class Test(TestCase):
             for game in kind.glob('*'):
                 for p in game.glob('*'):
                     if p not in ignored_list:
-                        print(p)
                         with self.assertNoLogs('sounder', level='ERROR'):
                             midi_wave = read_input(p, 'AUTO_DETECT', str(audio_file.absolute()), info=False)
 

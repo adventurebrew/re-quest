@@ -14,12 +14,9 @@
 # TODO: gui: menu?
 # TODO: gui: icons
 
-# TODO: get rid of c['ch'] vs `c`
 # TODO: sci1: channels warning (sq6/104.snd)
-# TODO: sci0: debug add sample to sq3/sound.102
-# TODO: sci0: understand sq3, sound.071
 # TODO: verify cue, loop in writing (sound.200)
-# TODO: debug adding digital sample to SCI1 file that hadn't such
+# TODO: get rid of c['ch'] vs `c`
 # TODO: The MT-32 always plays channel 9 (https://sciprogramming.com/community/index.php?topic=2074.0)
 # TODO: sci0: write adlib - voices?
 
@@ -64,6 +61,10 @@ print = functools.partial(print, flush=True)
 
 
 def setup_logger():
+    # pyav issues boring warnings...
+    # disable according to https://github.com/PyAV-Org/PyAV/issues/711
+    av.logging.set_level(av.logging.PANIC)
+
     logger = logging.getLogger('sounder')
     if debug:
         logger.setLevel(logging.DEBUG)
@@ -208,7 +209,7 @@ def read_messages(stream, size=None):
                 logger.debug(f"read_messages: {stream.tell()}\t:  0x{event.hex()} \t, {msg}")
                 track.append(msg)
             except ValueError:
-                logger.exception('value error. status: ' + hex(status) + ". event: 0x" + event.hex())
+                logger.warning(f"read_messages: encountered illegal event (0x{event.hex()}), ignoring")
     except EOFError:
         logger.debug(f'read_messages: {stream.tell()}\t EOF')
         pass
@@ -440,7 +441,7 @@ def read_sci1_snd_file(stream, info):
                     logger.warning(f"SCI1 channels - channel {ch} repeated with different values")
         devices[SCI1_Devices(track)] = channel_nums
         if info:
-            logger.info(f'Device {SCI1_Devices(track).name} uses channels: {[c + 1 for c in channel_nums]}')
+            logger.info(f"Device {SCI1_Devices(track).name} uses channels: {[c + 1 if c != 'digital' else c for c in channel_nums]}")
 
     wave = None
     for channel in channels.values():
