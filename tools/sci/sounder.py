@@ -336,6 +336,7 @@ def read_sci0_snd_file(stream, input_version, info):
                 b = read_le(stream)
                 voices = b // 16
                 hardware = SCI0_Early_Devices(b % 16)
+                logger.debug(f'read_sci0_snd_file: {stream.tell()} \t : 0x{b} - voices: {voices} , hw: {hardware}')
                 if hardware:
                     hardware |= SCI0_Early_Devices.MT_32
                 if SCI0_Early_Devices.ADLIB in hardware and SCI0_Early_Devices.CONTROL_CHANNEL in hardware:
@@ -352,6 +353,9 @@ def read_sci0_snd_file(stream, input_version, info):
                         channels = devices.get(device, [])
                         channels.append({'ch': ch, 'voices': voices})
                         devices[device] = channels
+
+    if not devices:
+        logger.warning("No devices information found")
 
     midifile = MidiFile(ticks_per_beat=TICKS_PER_BIT)
     info_track = MidiTrack()
@@ -403,7 +407,7 @@ def read_sci1_snd_file(stream, info):
 
         else:
             # digital track, not supported
-            logger.info("encountered digital track, not supported (also ignored by ScummVM and SCICompanion)")
+            logger.info("encountered so called 'digital track', not supported (also ignored by ScummVM and SCICompanion)")
             _ = read_le(stream, 6)
             assert read_le(stream) == 0xff
 
@@ -524,7 +528,7 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
                 b = voices * 16
                 hw = SCI0_Early_Devices(0)
                 for device in devices:
-                    if ch in devices[device] and device != SCI0_Early_Devices.MT_32:
+                    if ch in [c['ch'] for c in devices[device]] and device != SCI0_Early_Devices.MT_32:
                         hw |= device
                 write_le(f, b + hw.value)
             else:
@@ -556,6 +560,43 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
             f.write(digital['data'])
 
     logger.info(f'Saved {save_file}')
+
+
+def ensure_channel_preamble(ch_messages, ch):
+    # Midi channels must start with the following events in this order:
+    #  Program change
+    #  Volume
+    #  Pan
+    # SCI apparently doesn't look at the actual midi codes, but just plucks out the values.
+    program_change = None
+    volume_ctrl = None
+    pan_ctrl = None
+
+    for msg in ch_messages:
+        if msg.type in ['note_on', 'note_off']:
+            break
+        elif msg.type == 'program_change':
+            program_change = msg
+        elif msg.type == 'control_change' and msg.control == 7:
+            volume_ctrl = msg
+        elif msg.type == 'control_change' and msg.control == 10:
+            pan_ctrl = msg
+
+    if program_change is None:
+        program_change = mido.Message('program_change', channel=ch, program=0)  # TODO other program?
+    if volume_ctrl is None:
+        volume_ctrl = mido.Message('control_change', channel=ch, control=7, value=127)
+    if pan_ctrl is None:
+        pan_ctrl = mido.Message('control_change', channel=ch, control=10, value=64)
+
+    for msg in reversed([program_change, volume_ctrl, pan_ctrl]):
+        try:
+            ch_messages.remove(msg)
+        except ValueError:
+            pass
+        ch_messages.insert(0, msg)
+
+    return ch_messages
 
 
 def save_sci1(midi_wave, input_file, save_file):
@@ -603,21 +644,35 @@ def save_sci1(midi_wave, input_file, save_file):
     channel_nums = sorted(list(set([m.channel for m in messages if not m.is_realtime and not m.is_meta])))
     if midi_wave['wave'] and SCI1_DIGITAL_CHANNEL_MARKER not in channel_nums:
         channel_nums.append(SCI1_DIGITAL_CHANNEL_MARKER)
+
+    channel_messages = {}
+    for ch in channel_nums:
+        if ch != SCI1_DIGITAL_CHANNEL_MARKER:
+            channel_messages[ch] = []
+            timer = 0
+            for msg in messages:
+                if not msg.is_meta and (msg.is_realtime or msg.channel == ch):
+                    delta = msg.time - timer
+                    timer = msg.time
+                    m = msg.copy()
+                    m.time = delta
+                    channel_messages[ch].append(m)
+
+    for ch in channel_messages:
+        channel_messages[ch] = ensure_channel_preamble(channel_messages[ch], ch)
+
     with io.BytesIO() as channels_stream:
         for ch in channel_nums:
             channel_offsets[ch] = channels_stream.tell()
             if ch != SCI1_DIGITAL_CHANNEL_MARKER:
                 write_le(channels_stream, ch)  # TODO flags
                 write_le(channels_stream, 0x1)  # TODO poly and prio
-                timer = 0
-                for msg in messages:
-                    if not msg.is_meta and (msg.is_realtime or msg.channel == ch):
-                        delta = msg.time - timer
-                        timer = msg.time
-                        logger.debug('delay: ' + get_sierra_delay_bytes(delta).hex())
-                        logger.debug('msg:' + msg.bin().hex())
-                        channels_stream.write(get_sierra_delay_bytes(delta))
-                        channels_stream.write(msg.bin())
+                for msg in channel_messages[ch]:
+                    assert msg.is_realtime or msg.channel == ch
+                    logger.debug('delay: ' + get_sierra_delay_bytes(msg.time).hex())
+                    logger.debug('msg:' + msg.bin().hex())
+                    channels_stream.write(get_sierra_delay_bytes(msg.time))
+                    channels_stream.write(msg.bin())
             else:
                 digital = midi_wave['wave']
                 write_le(channels_stream, ch)  # no flags
@@ -653,6 +708,9 @@ def save_sci1(midi_wave, input_file, save_file):
                         f"Device {device.name} claims to use channel {c['ch'] + 1} ; but it's empty - removing from save")
                     devices[device] = [d for d in devices[device] if d['ch'] != c['ch']]
 
+    # add "digital track" - not sure what it does, but SQ6 has it for all sounds
+    devices['digital_track'] = [None]
+
     header_size = sum([1  # track type
                        + len(devices[d]) * 6  # (2 unknown, 2 offset, 2 size) for each channel
                        + 1  # ending 0xff - no more channels
@@ -666,16 +724,25 @@ def save_sci1(midi_wave, input_file, save_file):
         f.write(SIERRA_SND_HEADER)
         # write header
         for device in devices:
-            write_le(f, device.value)
-            try:
-                device_channels = [c['ch'] for c in devices[device]]
-            except TypeError:
-                device_channels = [c for c in devices[device]]
-            for channel in device_channels:
-                write_le(f, 0x0, 2)  # unknown
-                write_le(f, channel_offsets[channel] + header_size, 2)
-                write_le(f, channel_sizes[channel], 2)
-            write_le(f, 0xff)
+            if device != 'digital_track':
+                write_le(f, device.value)
+                try:
+                    device_channels = [c['ch'] for c in devices[device]]
+                except TypeError:
+                    device_channels = [c for c in devices[device]]
+                for channel in device_channels:
+                    write_le(f, 0x0, 2)  # unknown
+                    write_le(f, channel_offsets[channel] + header_size, 2)
+                    write_le(f, channel_sizes[channel], 2)
+                write_le(f, 0xff)
+            else:
+                # "digital track"
+                # I have no idea what it does, and what's the meaning of    0x4b    0x0     0x0     0x0     0x0     0x0
+                # but 124 out of 129 sound files in SQ6 have these numbers:
+                write_le(f, 0xf0)   # digital track marker
+                write_le(f, 0x4b)
+                write_le(f, 0x0, 5)
+                write_le(f, 0xff)   # end of "channel"
         write_le(f, 0xff)
         assert f.tell() == 2 + header_size  # 2 is the SIERRA_SND_HEADER
 

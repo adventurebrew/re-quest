@@ -41,6 +41,7 @@ class Test(TestCase):
                         with self.assertNoLogs('sounder', level='ERROR'):
                             midi_wave = read_snd_file(p, 'AUTO_DETECT', info=False)
                             save_sci0(midi_wave, p, save_file, is_early=True)
+                            read_snd_file(Path(save_file), 'AUTO_DETECT', info=False)
         try:
             Path(save_file).unlink()
         except:
@@ -55,6 +56,7 @@ class Test(TestCase):
                         with self.assertNoLogs('sounder', level='ERROR'):
                             midi_wave = read_snd_file(p, 'AUTO_DETECT', info=False)
                             save_sci0(midi_wave, p, save_file, is_early=False)
+                            read_snd_file(Path(save_file), 'AUTO_DETECT', info=False)
         try:
             Path(save_file).unlink()
         except:
@@ -69,6 +71,7 @@ class Test(TestCase):
                         with self.assertNoLogs('sounder', level='ERROR'):
                             midi_wave = read_snd_file(p, 'AUTO_DETECT', info=False)
                             save_sci1(midi_wave, p, save_file)
+                            read_snd_file(Path(save_file), 'AUTO_DETECT', info=False)
         try:
             Path(save_file).unlink()
         except:
@@ -83,6 +86,7 @@ class Test(TestCase):
                         with self.assertNoLogs('sounder', level='ERROR'):
                             midi_wave = read_snd_file(p, 'AUTO_DETECT', info=False)
                             save_midi(midi_wave['midifile'], p, save_file)
+                            read_midi_file(Path(save_file))
         try:
             Path(save_file).unlink()
         except:
@@ -111,8 +115,14 @@ class Test(TestCase):
                         with self.assertNoLogs('sounder', level='ERROR'):
                             midi_wave = read_input(p, 'AUTO_DETECT', str(audio_file.absolute()), info=False)
                             save_sci0(midi_wave, p, save_file, is_early=True)
+                            read_snd_file(Path(save_file), 'AUTO_DETECT', info=False)
+
                             save_sci0(midi_wave, p, save_file, is_early=False)
+                            read_snd_file(Path(save_file), 'AUTO_DETECT', info=False)
+
                             save_sci1(midi_wave, p, save_file)
+                            read_snd_file(Path(save_file), 'AUTO_DETECT', info=False)
+
         try:
             Path(save_file).unlink()
         except:
