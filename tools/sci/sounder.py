@@ -10,7 +10,6 @@
 # TODO: info: channels (also for midi)
 # TODO: sci1: choose device to save_midi
 # TODO: sci0: choose device to save_midi
-# TODO: error on missing file
 
 # TODO: gui: menu?
 # TODO: gui: icons
@@ -813,6 +812,8 @@ def convert_audio_to_low_wav(input_file, output_file, layout='mono'):
 
 def read_input(input_file, input_version, input_wav, info):
     p = Path(input_file)
+    if not p.exists():
+        raise FileExistsError(f"File doesn't exist: {p.absolute()}")
     if p.suffix.lower() == '.mid':
         midifile = read_midi_file(p)
         result = {'midifile': midifile, 'wave': None}
@@ -1038,8 +1039,14 @@ def main():
     })
     args = parser.parse_args()
 
-    # run over all supplied input_files (list), and open all '*' expressions
-    for input_file in [item for sublist in args.input_files for item in glob(sublist)]:
+    input_files = []
+    for file in args.input_files:
+        if '*' in file:
+            input_files.extend(glob(file))
+        else:
+            input_files.append(file)
+
+    for input_file in input_files:
         if args.info:
             logger.info(f'\n{input_file}\t{args.input_version}')
 
