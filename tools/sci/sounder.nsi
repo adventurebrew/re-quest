@@ -13,6 +13,9 @@
 
   BrandingText "(C) Zvika Haramaty"
 
+  ; set my icon
+  !define MUI_ICON  "misc\sounder.ico"
+
   ;Default installation folder
   InstallDir "$PROGRAMFILES\Sounder"
 

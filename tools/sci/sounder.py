@@ -7,8 +7,9 @@
 # conda activate sounder
 # pip install python-rtmidi gooey
 
+# TODO: add to windows apps/remove menu
 # TODO: gui: menu?
-# TODO: gui: icons
+# TODO: gui: remove underscores from names
 
 # TODO: sci1: channels warning (sq6/104.snd)
 # TODO: verify cue, loop in writing (sound.200)
@@ -39,7 +40,7 @@ from mido import MidiFile, MidiTrack
 from mido.midifiles.tracks import _to_abstime, _to_reltime
 import pyaudio
 
-from gooey import Gooey, GooeyParser
+from gooey import Gooey, GooeyParser, local_resource_path
 
 import gooey_misc
 
@@ -990,6 +991,7 @@ gooey_misc.my_widget_updates(get_sound_devices_in_file)
        default_size=(600, 800),
        program_name='Sounder',
        program_description="Sierra SCI 'snd' manager - load, save and play\n(run with '--help' for command line interface)",
+       image_dir=local_resource_path('misc'),
        )
 def main():
     parser = GooeyParser(description="Sierra SCI 'snd' manager - load, save and play",
