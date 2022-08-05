@@ -7,7 +7,7 @@
 # conda activate sounder
 # pip install python-rtmidi gooey
 
-# TODO: add to windows apps/remove menu
+# TODO: apps/remove menu : add size
 # TODO: gui: menu?
 # TODO: gui: remove underscores from names
 

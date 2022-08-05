@@ -4,6 +4,8 @@
   !include "MUI2.nsh"
 
 ;--------------------------------
+
+
 ;General
 
   ;Name and file
@@ -15,6 +17,7 @@
 
   ; set my icon
   !define MUI_ICON  "misc\sounder.ico"
+  !define MUI_UNICON   "misc\sounder.ico"   ; for the uninstaller
 
   ;Default installation folder
   InstallDir "$PROGRAMFILES\Sounder"
@@ -68,6 +71,25 @@ Section "Sounder" SecMain
 
   ;Store installation folder
   WriteRegStr HKCU "Software\Sounder" "" $INSTDIR
+
+  ;Add uninstall information to "Add/Remove Programs
+  ;note the corresponding DeleteRegKey in the uninstaller
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Sounder" \
+                 "DisplayName" "Sounder - Sierra SCI 'snd' manager: load, save and play"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Sounder" \
+                 "UninstallString" "$\"$INSTDIR\uninstall.exe$\""
+
+  ; the following "Add/remove" settings are optional
+
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Sounder" \
+                 "DisplayIcon" "$INSTDIR\Uninstall.exe"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Sounder" \
+                 "Publisher" "Zvika Haramaty (Hebrew Adventure)"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Sounder" \
+                 "URLInfoAbout"  "https://github.com/adventurebrew/re-quest"
+  IntFmt $0 "0x%08X" 221184     ; estimated disk size
+  WriteRegDWORD  HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Sounder" \
+                 "EstimatedSize"  "$0"      ; note the DWORD
 
   ;Create uninstaller
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -127,5 +149,7 @@ Section "Uninstall"
 
 
   DeleteRegKey /ifempty HKCU "Software\Sounder"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Sounder"
+
 
 SectionEnd
