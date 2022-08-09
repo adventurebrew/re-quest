@@ -86,8 +86,9 @@ def args_replace_underscore_with_spaces():
     orig_action_to_json = argparse_to_json.action_to_json
 
     def action_to_json(action, widget, options):
-        action.dest = action.dest.replace('_', ' ')
-        return orig_action_to_json(action, widget, options)
+        result = orig_action_to_json(action, widget, options)
+        result['data']['display_name'] = result['data']['display_name'].replace('_', ' ')
+        return result
 
     argparse_to_json.action_to_json = action_to_json
 

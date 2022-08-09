@@ -9,7 +9,6 @@
 
 # TODO: sci1: channels warning (sq6/104.snd) [channels per device]
 # TODO: gui: menu?
-# TODO: gui: remove underscores from names
 
 # TODO: midi: read write devices
 
@@ -17,6 +16,7 @@
 # TODO: get rid of c['ch'] vs `c`
 # TODO: The MT-32 always plays channel 9 (https://sciprogramming.com/community/index.php?topic=2074.0)
 # TODO: sci0: write adlib - voices?
+# TODO: sci1: research unknown devices identity
 
 # TODO: adlib player? (https://pypi.org/project/PyOPL/)
 # TODO: https://github.com/nwhitehead/pyfluidsynth  ?
@@ -979,9 +979,7 @@ gooey_misc.add_read_only_dropdown()
 gooey_misc.force_english()
 gooey_misc.progress_bar_dont_display_remaining_time()
 gooey_misc.my_widget_updates(get_sound_devices_in_file)
-
-
-# gooey_misc.args_replace_underscore_with_spaces()  # TODO: it makes FileChooser to ignore wildcards
+gooey_misc.args_replace_underscore_with_spaces()
 
 
 @Gooey(clear_before_run=True,
