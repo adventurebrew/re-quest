@@ -35,7 +35,7 @@
 
 
   ; run at end
-  !define MUI_FINISHPAGE_RUN "$INSTDIR\gui\sounder\Sounder.exe"
+  !define MUI_FINISHPAGE_RUN "$INSTDIR\sounder\sounder_no_console.exe"
 
 
 ;--------------------------------
@@ -67,7 +67,7 @@ Section "Sounder" SecMain
   SetOutPath "$INSTDIR"
 
   ;ADD YOUR OWN FILES HERE...
-  File /r "dist\*"
+  File /r "dist\both\*"
 
   ;Store installation folder
   WriteRegStr HKCU "Software\Sounder" "" $INSTDIR
@@ -87,7 +87,7 @@ Section "Sounder" SecMain
                  "Publisher" "Zvika Haramaty (Hebrew Adventure)"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Sounder" \
                  "URLInfoAbout"  "https://github.com/adventurebrew/re-quest"
-  IntFmt $0 "0x%08X" 221184     ; estimated disk size
+  IntFmt $0 "0x%08X" 114790     ; estimated disk size in KB
   WriteRegDWORD  HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Sounder" \
                  "EstimatedSize"  "$0"      ; note the DWORD
 
@@ -96,24 +96,24 @@ Section "Sounder" SecMain
 
 
   ; create .bat file to run cli
-  FileOpen $0 "$INSTDIR\cli\sounder\sounder.bat" w
-  FileWrite $0 '"$INSTDIR\cli\sounder\sounder.exe" --help$\r$\n'
+  FileOpen $0 "$INSTDIR\sounder\sounder.bat" w
+  FileWrite $0 '"$INSTDIR\sounder\sounder.exe" --help$\r$\n'
   FileWrite $0 'pause$\r$\n'
   FileClose $0
 
   ;create start-menu items
   CreateDirectory "$SMPROGRAMS\Sounder"
   CreateShortCut "$SMPROGRAMS\Sounder\Uninstall.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0
-  CreateShortCut "$SMPROGRAMS\Sounder\Sounder (Command Line).lnk" "$INSTDIR\cli\sounder\Sounder.bat" "" "$INSTDIR\cli\sounder\Sounder.exe" 0
-  CreateShortCut "$SMPROGRAMS\Sounder\Sounder.lnk" "$INSTDIR\gui\sounder\Sounder.exe" "" "$INSTDIR\gui\sounder\Sounder.exe" 0
+  CreateShortCut "$SMPROGRAMS\Sounder\Sounder (Command Line).lnk" "$INSTDIR\sounder\sounder.bat" "" "$INSTDIR\sounder\sounder.exe" 0
+  CreateShortCut "$SMPROGRAMS\Sounder\Sounder.lnk" "$INSTDIR\sounder\sounder_no_console.exe" "" "$INSTDIR\sounder\sounder_no_console.exe" 0
 
 
 SectionEnd
 
 Section "Create desktop shortcut" SecDesktop
   ;create desktop shortcut
-  CreateShortCut "$DESKTOP\Sounder.lnk" "$INSTDIR\gui\sounder\Sounder.exe" ""
-  CreateShortCut "$DESKTOP\Sounder (Command Line).lnk" "$INSTDIR\cli\sounder\Sounder.bat" "" "$INSTDIR\gui\sounder\Sounder.exe"
+  CreateShortCut "$DESKTOP\Sounder.lnk" "$INSTDIR\sounder\sounder_no_console.exe" ""
+  CreateShortCut "$DESKTOP\Sounder (Command Line).lnk" "$INSTDIR\sounder\sounder.bat" "" "$INSTDIR\sounder\sounder.exe"
 SectionEnd
 
 

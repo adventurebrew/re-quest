@@ -7,15 +7,19 @@
 # conda activate sounder
 # pip install python-rtmidi gooey
 
-# TODO: apps/remove menu : add size
+# TODO: sci1: channels warning (sq6/104.snd) [channels per device]
 # TODO: gui: menu?
 # TODO: gui: remove underscores from names
 
-# TODO: sci1: channels warning (sq6/104.snd)
+# TODO: midi: read write devices
+
 # TODO: verify cue, loop in writing (sound.200)
 # TODO: get rid of c['ch'] vs `c`
 # TODO: The MT-32 always plays channel 9 (https://sciprogramming.com/community/index.php?topic=2074.0)
 # TODO: sci0: write adlib - voices?
+
+# TODO: adlib player? (https://pypi.org/project/PyOPL/)
+# TODO: https://github.com/nwhitehead/pyfluidsynth  ?
 
 import sys
 import io
@@ -26,6 +30,7 @@ import threading
 import functools
 import wave
 import logging
+import math
 from pathlib import Path
 from enum import Flag, Enum
 from copy import deepcopy
@@ -906,7 +911,7 @@ def play_midi(midi_wave, play_device, port=None, verbose=False):
     logger.info(f'Playing {play_device}, length {midifile.length:.1f} seconds')
 
     if gooey_misc.gooey_enabled:
-        logger.info(f'seconds: {0}/{round(midifile.length)}')
+        logger.info(f'seconds: {0}/{math.ceil(midifile.length)}')
         progress_thread = threading.Thread(target=show_progress, args=(midifile.length,))
         progress_thread.start()
 
