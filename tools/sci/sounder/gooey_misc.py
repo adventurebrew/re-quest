@@ -93,6 +93,26 @@ def args_replace_underscore_with_spaces():
     argparse_to_json.action_to_json = action_to_json
 
 
+@protected_func
+def add_func_to_menu():
+    def menuFunction(item, *args, **kwargs):
+        item['func'](item, args, **kwargs)
+
+    def handleMenuAction(self, item):
+        try:
+            return orig_menuFunction(self, item)
+        except KeyError:
+            extended_handlers = {
+                'Function': menuFunction,   # Zvika's addition
+            }
+            f = extended_handlers[item['type']]
+            return partial(f, item)
+
+    from gooey.gui.components.menubar import MenuBar, partial
+    orig_menuFunction = MenuBar.handleMenuAction
+    MenuBar.handleMenuAction = handleMenuAction
+
+
 def find_gooey_object(name, somewhere):
     for child in somewhere.TopLevelParent.configs[0].Children:
         try:

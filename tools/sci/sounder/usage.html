@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+
+
+<h3>Welcome</h3>
+<b>Sounder</b> can do more or less anything that you'd like with Sierra's SCI sound format.
+If you find anything that you'd like to do, but cannot, or any other problem, please contact me
+<i>(Menu/File/Report an issue, or suggest a feature)</i>
+
+<h3>Quick Start</h3>
+You should select an <b>input file</b> to work on (multiple files can be selected, either with '*', or with the dialog).
+<p>
+    Usually, you'll want to leave the <b>input version</b> as 'AUTO_DETECT', unless there are problems.
+<p>
+    Now, you can choose to do various things with the file (you can select any combination, by default nothing is done):
+<ul>
+    <li><b>Play</b> file's musical contents (ignoring digital sample)</li>
+    <li><b>Save</b> file's contents in various formats</li>
+    <li>Add <b>digital sample</b> (or replace it, if it already exists)</li>
+    <li>Play <b>digital sample</b></li>
+    <li>Save only the <b>digital sample</b></li>
+</ul>
+<p>
+    When you've selected the required actions, click <b>Start</b>.
+
+<p> Now, you can either <b>Restart</b> to repeat the exact same actions, <b>Edit</b> to go back and modify
+    some settings, or <b>Close</b> to finish.
+
+<h3>Input</h3>
+The input file can be one of:
+<ul>
+    <li>Early SCI0 (rare)</li>
+    <li>SCI0</li>
+    <li>SCI1+</li>
+    <li>Standard MIDI File</li>
+</ul>
+
+It's recommended to use AUTO_DETECT. If something is weird, try and set it explicitly, it might improve the error
+message.
+
+<h3>Play</h3>
+After a file has been selected, and <b>play</b> has been checked, it's possible to select the <b>play device</b> - each
+device (Adlib/MT-32/etc.) has
+channels associated with it, this selects which channels to play (or <b>all channels in file</b>). It doesn't try
+to emulate that sound device, it merely selects the sound device's relevant channels. <br>
+Note: if there's a problem in reading the file, 'play device' will show every device known to Sounder.
+
+<p>
+    By default the music will be played through <i>Microsoft GS Wavetable Synth</i>. Sadly, this device isn't perfect.
+    You might want to install FluidSynth, or similar program, to add more ports. Furthermore, it's recommended to
+    install <i>munt</i>
+    in order to have an MT-32 emulation, if you want to hear its channels.
+
+<h3>Save</h3>
+The file can be saved in any of the following formats, regardless of its original format:
+<ul>
+    <li>Early SCI0 (rare)</li>
+    <li>SCI0</li>
+    <li>SCI1+</li>
+    <li>Standard MIDI File</li>
+</ul>
+
+<p>After selecting save format, the other save-related options can be chosen.</p>
+<p>
+    If the input file had a digital sample, or a digital sample was loaded (in <b>input wav</b>), and the file isn't
+    saved as <i>Standard MIDI File</i> - then the digital sample will be saved as part of the file.
+<p>You can supply a name (and path) for the <b>save file</b>, or leave that field empty, and use the default - which is
+    adding <i>.snd</i> for any Sierra format, and <i>.mid</i> for MIDI files - even that extension already existed.
+    e.g., if the original file is <i>100.snd</i> it will be saved as <i>100.snd.snd</i></p>
+<p>If such file exists, it will be overwritten without further notice!</p>
+
+<p>Similarly to the <b>play device</b> option, you can control the <b>save midi device</b>. Those settings aren't
+    related to each other.</p>
+
+
+<h3>Digital</h3>
+Digital sample can come from two places:
+<ul>
+    <li>Existing in <b>input file</b></li>
+    <li>Loaded from <b>input digital</b> file</li>
+</ul>
+If <b>input digital</b> file is supplied, it will replace the digital sample if it existed in the <b>input file</b>.
+<p>
+    The <b>input digital</b> file can be of any type. If it's not an unsigned 8 bit simple .wav file, it will be
+    converted to such format. The frequency will be 22000Hz if it was so, or higher, and 11000Hz otherwise.
+
+<p>Note: in ScummVM it played fine, but if using 22KHz in older games is a problem in original Sierra interpreter, just
+    report to me, and I will change it.</p>
+
+The digital sample can be played, regardless to the music from the input file; and can be saved. Similar apply to save
+name and overwriting.
+
+<h3>Misc</h3>
+In GUI mode, by default, file's <b>info</b>rmation is printed. In CLI it's off by default.
+
+<h3>Command Line Interface</h3>
+
+<h3>Spec</h3>
+
+
+</body>
+</html>

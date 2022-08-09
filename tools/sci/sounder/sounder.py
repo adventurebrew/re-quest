@@ -44,10 +44,13 @@ import mido.backends.rtmidi
 from mido import MidiFile, MidiTrack
 from mido.midifiles.tracks import _to_abstime, _to_reltime
 import pyaudio
+import wx
 
 from gooey import Gooey, GooeyParser, local_resource_path
 
 import gooey_misc
+
+VERSION = "0.4"
 
 SIERRA_SND_HEADER = b'\x84\0'
 NUM_OF_CHANNELS = 16
@@ -774,9 +777,9 @@ def save_sci1(midi_wave, input_file, save_file):
     logger.info(f'Saved {save_file}')
 
 
-def read_wav_file(input_wav):
+def read_wav_file(input_digital):
     result = {}
-    with wave.open(input_wav, 'rb') as w:
+    with wave.open(input_digital, 'rb') as w:
         if w.getnchannels() != 1:
             assert ValueError("wave file must have 1 channel (mono)")
         if w.getsampwidth() != 1:
@@ -819,7 +822,7 @@ def convert_audio_to_low_wav(input_file, output_file, layout='mono'):
     return output_file
 
 
-def read_input(input_file, input_version, input_wav, info):
+def read_input(input_file, input_version, input_digital, info):
     p = Path(input_file)
     if not p.exists():
         raise FileExistsError(f"File doesn't exist: {p.absolute()}")
@@ -836,16 +839,16 @@ def read_input(input_file, input_version, input_wav, info):
         logger.info(f"Channels actually used in messages: {[c + 1 for c in channel_nums]}")
         logger.info(f"Midi length: {result['midifile'].length:.1f} seconds")
 
-    if input_wav:
+    if input_digital:
         try:
-            result['wave'] = read_wav_file(input_wav)
+            result['wave'] = read_wav_file(input_digital)
         except:
             logger.info("Audio file isn't an 8 bit .wav file; trying to convert")
             _, temp_wav_file = tempfile.mkstemp(suffix='.wav')
-            input_wav = convert_audio_to_low_wav(input_wav, temp_wav_file)
-            result['wave'] = read_wav_file(input_wav)
+            input_digital = convert_audio_to_low_wav(input_digital, temp_wav_file)
+            result['wave'] = read_wav_file(input_digital)
             try:
-                Path(input_wav).unlink()
+                Path(input_digital).unlink()
             except:
                 pass
 
@@ -980,6 +983,18 @@ gooey_misc.force_english()
 gooey_misc.progress_bar_dont_display_remaining_time()
 gooey_misc.my_widget_updates(get_sound_devices_in_file)
 gooey_misc.args_replace_underscore_with_spaces()
+gooey_misc.add_func_to_menu()
+
+
+def menu_exit(item, *args, **kwargs):
+    args[0][0].EventObject.GetWindow().Close()
+
+
+def html_window(item, *args, **kwargs):
+    frame = wx.Frame(parent=None, title="Usage", size=(600, 800))
+    html = wx.html.HtmlWindow(frame)
+    html.LoadPage('usage.html')
+    frame.Show()
 
 
 @Gooey(clear_before_run=True,
@@ -995,6 +1010,46 @@ gooey_misc.args_replace_underscore_with_spaces()
        program_name='Sounder',
        program_description="Sierra SCI 'snd' manager - load, save and play\n(run with '--help' for command line interface)",
        image_dir=local_resource_path('misc'),
+       menu=[
+           # new menu group
+           {'name': 'File',
+            'items': [
+                # new menu item
+                {
+                    'type': 'AboutDialog',
+                    'menuTitle': 'About',
+                    'name': 'Sounder',
+                    'description': "Sierra SCI 'snd' manager",
+                    'version': VERSION,
+                    'copyright': '2022',
+                    'website': 'https://github.com/adventurebrew/re-quest/',
+                    # 'license': 'MIT'
+                    'developer': 'Zvika Haramaty',
+                },
+                # new menu item
+                {
+                    'type': 'Link',
+                    'menuTitle': 'Report an issue, or suggest a feature',
+                    'url': 'https://github.com/adventurebrew/re-quest/issues'
+                },
+                # new menu item
+                {
+                    'type': 'Function',
+                    'menuTitle': 'Exit',
+                    'func': menu_exit,
+                }
+            ]},
+           # new menu group
+           {'name': 'Help',
+            'items': [
+                # new menu item
+                {
+                    'type': 'Function',
+                    'menuTitle': "Usage",
+                    'func': html_window,
+                }
+            ]
+            }]
        )
 def main():
     parser = GooeyParser(description="Sierra SCI 'snd' manager - load, save and play",
@@ -1036,7 +1091,7 @@ def main():
 
     digital_group = parser.add_argument_group("Digital sample options",
                                               "Optional related to digital sample (if exists), or adding one")
-    digital_group.add_argument("--input_wav",
+    digital_group.add_argument("--input_digital",
                                help="add file's contents as digital sample, or replace existing one (can be any audio/video file)",
                                widget="FileChooser", gooey_options={
             'wildcard':
@@ -1067,7 +1122,7 @@ def main():
         if args.info:
             logger.info(f'\n{input_file}\t{args.input_version}')
 
-        midi_wave = read_input(input_file, args.input_version, args.input_wav, args.info)
+        midi_wave = read_input(input_file, args.input_version, args.input_digital, args.info)
 
         if args.save:
             if args.save == "MIDI":
