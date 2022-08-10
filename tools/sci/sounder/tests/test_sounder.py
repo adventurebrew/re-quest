@@ -1,7 +1,8 @@
 import tempfile
 from unittest import TestCase
+from pathlib import Path
 
-from tools.sci.sounder import *
+from tools.sci.sounder.sounder import *
 
 # in order to run, please put relevant sound.* or *.snd file under 'sound files/*/*/'
 # and have some 'sound files/a.mp3'

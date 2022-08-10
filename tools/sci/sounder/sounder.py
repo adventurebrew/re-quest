@@ -8,7 +8,7 @@
 # pip install python-rtmidi gooey
 
 # TODO: sci1: channels warning (sq6/104.snd) [channels per device]
-# TODO: gui: menu?
+# TODO: github: issues - templates?
 
 # TODO: midi: read write devices
 
@@ -17,6 +17,7 @@
 # TODO: The MT-32 always plays channel 9 (https://sciprogramming.com/community/index.php?topic=2074.0)
 # TODO: sci0: write adlib - voices?
 # TODO: sci1: research unknown devices identity
+# TODO: license
 
 # TODO: adlib player? (https://pypi.org/project/PyOPL/)
 # TODO: https://github.com/nwhitehead/pyfluidsynth  ?
@@ -31,6 +32,7 @@ import functools
 import wave
 import logging
 import math
+import webbrowser
 from pathlib import Path
 from enum import Flag, Enum
 from copy import deepcopy
@@ -991,8 +993,15 @@ def menu_exit(item, *args, **kwargs):
 
 
 def html_window(item, *args, **kwargs):
-    frame = wx.Frame(parent=None, title="Usage", size=(600, 800))
+    def OnLinkClicked(linkInfo):
+        # by default, HtmlWindow tries to open links in itself
+        # it looks bad, and not working for https
+        # instead, send them to user's browser
+        webbrowser.open(linkInfo.Href)
+
+    frame = wx.Frame(parent=None, title="User Guide", size=(600, 800))
     html = wx.html.HtmlWindow(frame)
+    html.OnLinkClicked = OnLinkClicked
     html.LoadPage('usage.html')
     frame.Show()
 
@@ -1016,18 +1025,6 @@ def html_window(item, *args, **kwargs):
             'items': [
                 # new menu item
                 {
-                    'type': 'AboutDialog',
-                    'menuTitle': 'About',
-                    'name': 'Sounder',
-                    'description': "Sierra SCI 'snd' manager",
-                    'version': VERSION,
-                    'copyright': '2022',
-                    'website': 'https://github.com/adventurebrew/re-quest/',
-                    # 'license': 'MIT'
-                    'developer': 'Zvika Haramaty',
-                },
-                # new menu item
-                {
                     'type': 'Link',
                     'menuTitle': 'Report an issue, or suggest a feature',
                     'url': 'https://github.com/adventurebrew/re-quest/issues'
@@ -1045,9 +1042,21 @@ def html_window(item, *args, **kwargs):
                 # new menu item
                 {
                     'type': 'Function',
-                    'menuTitle': "Usage",
+                    'menuTitle': "User Guide",
                     'func': html_window,
-                }
+                },
+                # new menu item
+                {
+                    'type': 'AboutDialog',
+                    'menuTitle': 'About',
+                    'name': 'Sounder',
+                    'description': "Sierra SCI 'snd' manager",
+                    'version': VERSION,
+                    'copyright': '2022',
+                    'website': 'https://github.com/adventurebrew/re-quest/tools/sci/sounder',
+                    # 'license': 'MIT'
+                    'developer': 'Zvika Haramaty',
+                },
             ]
             }]
        )
