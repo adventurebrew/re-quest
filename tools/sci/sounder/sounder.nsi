@@ -35,7 +35,7 @@
 
 
   ; run at end
-  !define MUI_FINISHPAGE_RUN "$INSTDIR\sounder\sounder_no_console.exe"
+  !define MUI_FINISHPAGE_RUN "$INSTDIR\sounder\sounderw.exe"
 
 
 ;--------------------------------
@@ -67,7 +67,7 @@ Section "Sounder" SecMain
   SetOutPath "$INSTDIR"
 
   ;ADD YOUR OWN FILES HERE...
-  File /r "dist\both\*"
+  File /r "dist\*"
 
   ;Store installation folder
   WriteRegStr HKCU "Software\Sounder" "" $INSTDIR
@@ -105,14 +105,14 @@ Section "Sounder" SecMain
   CreateDirectory "$SMPROGRAMS\Sounder"
   CreateShortCut "$SMPROGRAMS\Sounder\Uninstall.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0
   CreateShortCut "$SMPROGRAMS\Sounder\Sounder (Command Line).lnk" "$INSTDIR\sounder\sounder.bat" "" "$INSTDIR\sounder\sounder.exe" 0
-  CreateShortCut "$SMPROGRAMS\Sounder\Sounder.lnk" "$INSTDIR\sounder\sounder_no_console.exe" "" "$INSTDIR\sounder\sounder_no_console.exe" 0
+  CreateShortCut "$SMPROGRAMS\Sounder\Sounder.lnk" "$INSTDIR\sounder\sounderw.exe" "" "$INSTDIR\sounder\sounderw.exe" 0
 
 
 SectionEnd
 
 Section "Create desktop shortcut" SecDesktop
   ;create desktop shortcut
-  CreateShortCut "$DESKTOP\Sounder.lnk" "$INSTDIR\sounder\sounder_no_console.exe" ""
+  CreateShortCut "$DESKTOP\Sounder.lnk" "$INSTDIR\sounder\sounderw.exe" ""
   CreateShortCut "$DESKTOP\Sounder (Command Line).lnk" "$INSTDIR\sounder\sounder.bat" "" "$INSTDIR\sounder\sounder.exe"
 SectionEnd
 
