@@ -8,16 +8,16 @@
 # pip install python-rtmidi gooey
 
 # TODO: sci1: channels warning (sq6/104.snd) [channels per device]
-# TODO: github: issues - templates?
-
 # TODO: midi: read write devices
-
-# TODO: verify cue, loop in writing (sound.200)
 # TODO: get rid of c['ch'] vs `c`
 # TODO: The MT-32 always plays channel 9 (https://sciprogramming.com/community/index.php?topic=2074.0)
-# TODO: sci0: write adlib - voices?
+
 # TODO: sci1: research unknown devices identity
 # TODO: license
+# TODO: github: issues - templates?
+
+# TODO: verify cue, loop in writing (sound.200)
+# TODO: sci0: write adlib - voices?
 
 # TODO: adlib player? (https://pypi.org/project/PyOPL/)
 # TODO: https://github.com/nwhitehead/pyfluidsynth  ?

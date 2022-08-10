@@ -97,6 +97,11 @@ The file can be saved in any of the following formats, regardless of its origina
 <p>Similarly to the <b>play device</b> option, you can control the <b>save midi device</b>. Those settings aren't
     related to each other.</p>
 
+<p>Note: when saving a MIDI file, it contains all data from original Sierra file (except of digital sample) as meta
+    messages. You can see it in your favourite MIDI editor (BTW, mine is <i>Sekaiju</i>). Even Cue and Loops are saved
+    that's way. It should be possible to save Sierra's file as MIDI, edit Cue and Loop meta messages, and then load that
+    file and save it as Sierra snd file.</p>
+
 
 <h3>Digital</h3>
 Digital sample can come from two places:
@@ -135,6 +140,17 @@ All this discussion isn't relevant if you're using Linux, or running <i>sounder.
 If <i>sounder.py</i>/<i>sounder.exe</i>/<i>sounderw.exe</i> is started without any parameters, the GUI
 will be started. If it's called with any parameter, CLI will be started. To learn how to use CLI, just call it with
 <code>--help</code>. The <i>sounder command line</i> shortcut refers to <i>sounder.bat</i> which does exactly that.
+
+<h3>Problematic Areas</h3>
+As mentioned before, <i>Sounder</i> is still young, and probably has bugs. I'm especially concerned regarding:
+<ul>
+    <li>Cue and Loops after saving in a new format - they <i>should</i> work, but I haven't tested it</li>
+    <li>Adlib has different initial 'voices' handling in SCI0 and SCI1. When converting from one to other, it should
+        have some problems. I have an idea how to fix it, but first I need a concrete report of such a issue.
+    </li>
+</ul>
+<p></p>
+Again, please report any problem, so I can improve <i>Sounder</i>.
 
 
 <h3>Spec</h3>
