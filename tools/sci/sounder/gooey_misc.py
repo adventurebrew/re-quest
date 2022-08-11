@@ -103,7 +103,7 @@ def add_func_to_menu():
             return orig_menuFunction(self, item)
         except KeyError:
             extended_handlers = {
-                'Function': menuFunction,   # Zvika's addition
+                'Function': menuFunction,  # Zvika's addition
             }
             f = extended_handlers[item['type']]
             return partial(f, item)

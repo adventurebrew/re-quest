@@ -8,7 +8,7 @@ a = Analysis(
     ['sounder.py'],
     pathex=['.'],
     binaries=[],
-    datas=[('misc', 'misc')],
+    datas=[('misc', 'misc'), ('usage.html', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

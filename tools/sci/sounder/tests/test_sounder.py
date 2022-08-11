@@ -1,11 +1,10 @@
-import tempfile
 from unittest import TestCase
-from pathlib import Path
 
 from tools.sci.sounder.sounder import *
 
 # in order to run, please put relevant sound.* or *.snd file under 'sound files/*/*/'
 # and have some 'sound files/a.mp3'
+from tools.sci.sounder.sounder import read_snd_file
 
 ignored_list = [
     Path(r'sound files/sci1/sq6/ignored'),
