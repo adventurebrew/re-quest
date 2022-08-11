@@ -5,6 +5,7 @@ from mido import MidiFile, MidiTrack
 
 from sci_common import SIERRA_SND_HEADER, TICKS_PER_BIT, SCI0_Early_Devices, SCI0_Devices, ChannelInfo
 from sci_common import get_sierra_delay_bytes, read_messages
+from midi import get_midi_channels_of_device
 
 from utils import read_le, logger, read_be, write_le
 
@@ -75,6 +76,12 @@ def read_sci0_snd_file(stream, input_version, info):
                     channels = devices.get(device, [])
                     channels.append(ChannelInfo(num=ch, voices=voices))
                     devices[device] = channels
+
+    if not sci0_early:
+        for device in [SCI0_Devices.MT_32, SCI0_Devices.GM]:
+            if device in devices and 9 in get_midi_channels_of_device('ALL CHANNELS IN FILE', devices) and 9 not in [c.num for c in devices[device]]:
+                devices[device].append(ChannelInfo(num=9))
+                logger.info(f"Adding percussion channel (10) to {device.name}")
 
     if not devices:
         logger.warning("No devices information found")

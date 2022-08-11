@@ -9,7 +9,7 @@
 
 # TODO: sci1: channels warning (sq6/104.snd) [channels per device]
 # TODO: midi: read write devices
-# TODO: The MT-32 always plays channel 9 (https://sciprogramming.com/community/index.php?topic=2074.0) sq3/sound.011
+# TODO: gui: get rid of "ok" sounds
 
 # TODO: license
 # TODO: github: issues - templates?
