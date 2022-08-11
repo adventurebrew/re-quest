@@ -15,11 +15,8 @@ def get_midi_channels_of_device(play_device, devices, ):
         result = []
         for device_channels in devices.values():
             for c in device_channels:
-                if c != 'digital':
-                    try:
-                        result.append(c['ch'])
-                    except TypeError:
-                        result.append(c)
+                if c.num != 'digital':
+                    result.append(c.num)
         return sorted(list(set(result)))
 
     else:
@@ -29,10 +26,7 @@ def get_midi_channels_of_device(play_device, devices, ):
         else:
             assert len(relevant_devices) == 1
             relevant_device = devices[relevant_devices[0]]
-            try:
-                return [c['ch'] for c in relevant_device if c != 'digital']
-            except TypeError:
-                return [c for c in relevant_device if c != 'digital']
+            return [c.num for c in relevant_device if c != 'digital']
 
 
 def play_midi(midi_wave, play_device, port=None, verbose=False, gooey_enabled=False):

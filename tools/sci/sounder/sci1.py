@@ -5,7 +5,8 @@ from ast import literal_eval
 import mido
 from mido import MidiFile, MidiTrack
 
-from sci_common import SIERRA_SND_HEADER, SCI1_Devices, get_sierra_delay_bytes, read_messages, TICKS_PER_BIT
+from sci_common import SIERRA_SND_HEADER, TICKS_PER_BIT, SCI1_Devices, ChannelInfo
+from sci_common import get_sierra_delay_bytes, read_messages
 from utils import read_le, logger, write_le
 
 SCI1_DIGITAL_CHANNEL_MARKER = 0xfe
@@ -49,7 +50,7 @@ def read_sci1_snd_file(stream, info):
     devices = {}
     channels = {}
     for track in device_tracks:
-        channel_nums = []
+        channels_info = []
         for channel in device_tracks[track]:
             stream.seek(channel['data_offset'])
             ch = read_le(stream)
@@ -57,14 +58,14 @@ def read_sci1_snd_file(stream, info):
                 ch = ch % 16
             else:
                 ch = 'digital'
-            channel_nums.append(ch)
+            channels_info.append(ChannelInfo(num=ch, device=SCI1_Devices(track)))
             if ch not in channels:
                 channels[ch] = channel
             else:
                 if channels[ch] != channel:
                     logger.warning(f"SCI1 channels - channel {ch} repeated with different values")
-        devices[SCI1_Devices(track)] = channel_nums
-        msg = f"Device {SCI1_Devices(track).name} uses channels: {[c + 1 if c != 'digital' else c for c in channel_nums]}"
+        devices[SCI1_Devices(track)] = channels_info
+        msg = f"Device {SCI1_Devices(track).name} uses channels: {[c.get_channel_user() for c in channels_info]}"
         info_track.append(mido.MetaMessage(type='device_name', name=msg))
         if info:
             logger.info(msg)
@@ -100,11 +101,11 @@ def save_sci1(midi_wave, input_file, save_file):
     for orig_device in midi_wave['devices']:
         try:
             device = SCI1_Devices[orig_device.name]
-            channels = midi_wave['devices'][orig_device]
-            devices[device] = [c if c != 'digital' else SCI1_DIGITAL_CHANNEL_MARKER for c in channels]
+            devices[device] = midi_wave['devices'][orig_device]
         except KeyError:
             logger.info(f"SAVE SCI1: Ignoring device {orig_device.name}, doesn't have a SCI1 counterpart")
 
+    # TODO: move this out of here
     # get devices information from midi information track (if exists - probably created by us, when reading a SCI0 file)
     if not devices:
         for msg in midifile.tracks[0]:
@@ -182,24 +183,18 @@ def save_sci1(midi_wave, input_file, save_file):
     if channel_nums and not devices:
         logger.info(
             "Couldn't find devices information in first track; using arbitrary values. Contact Zvika if you wish to have control over this")
-        channels = [{'ch': ch} for ch in channel_nums]
+        channels = [ChannelInfo(num=ch) for ch in channel_nums]
         devices[SCI1_Devices.GM] = channels
         devices[SCI1_Devices.ADLIB] = channels
-        devices[SCI1_Devices.SPEAKER] = [{'ch': channel_nums[0]}]
+        devices[SCI1_Devices.SPEAKER] = [ChannelInfo(num=channel_nums[0])]
 
     # sq3, sound.016, some devices contains non existing channels - clean them
     for device in devices:
-        for c in devices[device]:
-            if type(c) == int:
-                if c not in channel_nums:
-                    logger.info(
-                        f"Device {device.name} claims to use channel {c + 1} ; but it's empty - removing from save")
-                    devices[device] = [d for d in devices[device] if d != c]
-            else:
-                if c['ch'] not in channel_nums:
-                    logger.info(
-                        f"Device {device.name} claims to use channel {c['ch'] + 1} ; but it's empty - removing from save")
-                    devices[device] = [d for d in devices[device] if d['ch'] != c['ch']]
+        for channel_info in devices[device]:
+            if channel_info.num not in channel_nums:
+                logger.info(
+                    f"Device {device.name} claims to use channel {channel_info.get_channel_user()} ; but it's empty - removing from save")
+                devices[device] = [d for d in devices[device] if d.num != channel_info.num]
 
     # add "digital track" - not sure what it does, but SQ6 has it for all sounds
     devices['digital_track'] = [None]
@@ -219,10 +214,7 @@ def save_sci1(midi_wave, input_file, save_file):
         for device in devices:
             if device != 'digital_track':
                 write_le(f, device.value)
-                try:
-                    device_channels = [c['ch'] for c in devices[device]]
-                except TypeError:
-                    device_channels = [c for c in devices[device]]
+                device_channels = [c.num for c in devices[device]]
                 for channel in device_channels:
                     write_le(f, 0x0, 2)  # unknown
                     write_le(f, channel_offsets[channel] + header_size, 2)

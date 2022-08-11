@@ -13,6 +13,7 @@ ignored_list = [
 test_files = Path('sound files')
 audio_file = test_files / 'a.mp3'
 
+
 class Test(TestCase):
     def test_read_snd_file_auto_detect(self):
         for kind in test_files.glob('*'):

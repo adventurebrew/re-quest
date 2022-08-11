@@ -50,6 +50,38 @@ class SCI1_Devices(Enum):
         return cls(cls.UNKNOWN)
 
 
+class ChannelInfo:
+    def __init__(self, num, voices=None, device=None):
+        # voices is for SCI0 (Adlib)
+        # device is for SCI1
+        self.num = num
+        self.voices = voices
+        self.device = device
+
+    def __lt__(self, other):
+        if self.num != other.num:
+            return self.num < other.num
+        elif self.device and other.device:
+            return self.device.name < other.device.name
+        else:
+            return True  # arbitrary value, it doesn't matter
+
+    def __repr__(self):
+        result = f'Channel {self.num}'
+        if self.device:
+            result += f' of {self.device}'
+        if self.voices:
+            result += f' (using {self.voices} voices)'
+        return result
+
+    def get_channel_user(self):
+        # internally channels start at 0; from user's perspective they start st 1
+        if self.num == 'digital':
+            return self.num
+        else:
+            return self.num + 1
+
+
 def get_sierra_delay_bytes(delay):
     result = b''
     while delay >= 240:

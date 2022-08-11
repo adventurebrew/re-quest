@@ -3,8 +3,9 @@ import io
 import mido
 from mido import MidiFile, MidiTrack
 
-from sci_common import SIERRA_SND_HEADER, SCI0_Early_Devices, SCI0_Devices, get_sierra_delay_bytes, read_messages, \
-    TICKS_PER_BIT
+from sci_common import SIERRA_SND_HEADER, TICKS_PER_BIT, SCI0_Early_Devices, SCI0_Devices, ChannelInfo
+from sci_common import get_sierra_delay_bytes, read_messages
+
 from utils import read_le, logger, read_be, write_le
 
 NUM_OF_CHANNELS = 16
@@ -72,7 +73,7 @@ def read_sci0_snd_file(stream, input_version, info):
             for device in possible_devices:
                 if device in hardware:
                     channels = devices.get(device, [])
-                    channels.append({'ch': ch, 'voices': voices})
+                    channels.append(ChannelInfo(num=ch, voices=voices))
                     devices[device] = channels
 
     if not devices:
@@ -82,7 +83,7 @@ def read_sci0_snd_file(stream, input_version, info):
     info_track = MidiTrack()
     info_track.append(mido.MetaMessage(type='track_name', name='MIDI_SCI0_HEADER'))
     for device in devices:
-        msg = f"Device {device.name} uses channels {[c['ch'] + 1 for c in devices[device]]} with voices {[c['voices'] for c in devices[device]]}"
+        msg = f"Device {device.name} uses channels {[c.get_channel_user() for c in devices[device]]} with voices {[c.voices for c in devices[device]]}"
         info_track.append(mido.MetaMessage(type='device_name', name=msg))
         if info:
             logger.info(msg)
@@ -111,10 +112,7 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
         for orig_device in midi_wave['devices']:
             try:
                 device = SCI0_Early_Devices[orig_device.name]
-                try:
-                    devices[device] = [c for c in midi_wave['devices'][orig_device] if c != 'digital']
-                except TypeError:
-                    devices[device] = [c['ch'] for c in midi_wave['devices'][orig_device] if c != 'digital']
+                devices[device] = midi_wave['devices'][orig_device]
             except KeyError:
                 logger.info(
                     f"SAVE SCI0 (EARLY): Ignoring device {orig_device}, doesn't have a SCI0 (EARLY) counterpart")
@@ -122,10 +120,7 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
         for orig_device in midi_wave['devices']:
             try:
                 device = SCI0_Devices[orig_device.name]
-                try:
-                    devices[device] = [c for c in midi_wave['devices'][orig_device] if c != 'digital']
-                except TypeError:
-                    devices[device] = [c['ch'] for c in midi_wave['devices'][orig_device] if c != 'digital']
+                devices[device] = midi_wave['devices'][orig_device]
             except KeyError:
                 logger.info(f"SAVE SCI0: Ignoring device {orig_device}, doesn't have a SCI0 counterpart")
 
@@ -157,12 +152,8 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
                 b = voices * 16
                 hw = SCI0_Early_Devices(0)
                 for device in devices:
-                    try:
-                        if ch in [c['ch'] for c in devices[device]] and device != SCI0_Early_Devices.MT_32:
-                            hw |= device
-                    except TypeError:
-                        if ch in [c for c in devices[device]] and device != SCI0_Early_Devices.MT_32:
-                            hw |= device
+                    if ch in [c for c in devices[device]] and device != SCI0_Early_Devices.MT_32:
+                        hw |= device
                 write_le(f, b + hw.value)
             else:
                 # regular SCI0
