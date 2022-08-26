@@ -7,10 +7,11 @@
 # conda activate sounder
 # pip install python-rtmidi gooey
 
-# TODO: sci1: channels warning (sq6/104.snd) [channels per device]
+# TODO: add .mid files to unit tests
 # TODO: midi: read write devices
 # TODO: gui: get rid of "ok" sounds
 
+# TODO: readme.md
 # TODO: license
 # TODO: github: issues - templates?
 
@@ -88,7 +89,7 @@ def read_input(input_file, input_version, input_digital, info):
     if info:
         messages = mido.merge_tracks(result['midifile'].tracks)
         channel_nums = sorted(list(set([m.channel for m in messages if not m.is_realtime and not m.is_meta])))
-        logger.info(f"Channels actually used in messages: {[c + 1 for c in channel_nums]}")
+        logger.debug(f"Channels actually used in messages: {[c + 1 for c in channel_nums]}")
         logger.info(f"Midi length: {result['midifile'].length:.1f} seconds")
 
     if input_digital:

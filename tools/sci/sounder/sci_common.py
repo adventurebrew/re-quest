@@ -51,12 +51,15 @@ class SCI1_Devices(Enum):
 
 
 class ChannelInfo:
-    def __init__(self, num, voices=None, device=None):
-        # voices is for SCI0 (Adlib)
-        # device is for SCI1
+    def __init__(self, num, voices=None, devices=[], data_offset=None, size=None):
         self.num = num
+        # voices is for SCI0 (Adlib)
         self.voices = voices
-        self.device = device
+        # from here it's SCI1
+        self.devices = devices
+        self.data_offset = data_offset
+        self.size = size
+        self.repeated = 0
 
     def __lt__(self, other):
         if self.num != other.num:
@@ -68,8 +71,8 @@ class ChannelInfo:
 
     def __repr__(self):
         result = f'Channel {self.num}'
-        if self.device:
-            result += f' of {self.device}'
+        if self.devices:
+            result += f' of {[d.name for d in self.devices]}'
         if self.voices:
             result += f' (using {self.voices} voices)'
         return result
@@ -77,9 +80,17 @@ class ChannelInfo:
     def get_channel_user(self):
         # internally channels start at 0; from user's perspective they start st 1
         if self.num == 'digital':
-            return self.num
+            result = 'digital'
         else:
-            return self.num + 1
+            result = str(self.num + 1)
+        result += "'" * self.repeated
+        return result
+
+    def get_key(self):
+        if self.data_offset and self.size:
+            return (self.num, self.data_offset, self.size)
+        else:
+            raise NotImplementedError
 
 
 def get_sierra_delay_bytes(delay):
@@ -102,7 +113,7 @@ def get_event_length(status):
         return 3
 
 
-def read_messages(stream, size=None):
+def read_messages(stream, size=None, name='SIERRA_SND'):
     # size=None is unlimited
     def read_enough():
         if size is None:
@@ -111,7 +122,7 @@ def read_messages(stream, size=None):
             return stream.tell() - start_point >= size
 
     track = MidiTrack()
-    track.append(mido.MetaMessage(type='track_name', name='SIERRA_SND'))
+    track.append(mido.MetaMessage(type='track_name', name=name))
     start_point = stream.tell()
     try:
         while not read_enough():

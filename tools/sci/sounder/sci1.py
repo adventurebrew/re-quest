@@ -50,7 +50,6 @@ def read_sci1_snd_file(stream, info):
     devices = {}
     channels = {}
     for track in device_tracks:
-        channels_info = []
         for channel in device_tracks[track]:
             stream.seek(channel['data_offset'])
             ch = read_le(stream)
@@ -58,22 +57,31 @@ def read_sci1_snd_file(stream, info):
                 ch = ch % 16
             else:
                 ch = 'digital'
-            channels_info.append(ChannelInfo(num=ch, device=SCI1_Devices(track)))
-            if ch not in channels:
-                channels[ch] = channel
+            ch_info = ChannelInfo(num=ch, devices=[SCI1_Devices(track)], data_offset=channel['data_offset'],
+                                  size=channel['size'])
+            key = ch_info.get_key()
+            if key not in channels:
+                ch_info.repeated = [c.num for c in channels.values()].count(ch)
+                channels[key] = ch_info
             else:
-                if channels[ch] != channel:
-                    logger.warning(f"SCI1 channels - channel {ch} repeated with different values")
-        devices[SCI1_Devices(track)] = channels_info
-        msg = f"Device {SCI1_Devices(track).name} uses channels: {[c.get_channel_user() for c in channels_info]}"
+                channels[key].devices.append(SCI1_Devices(track))
+
+    for track in device_tracks:
+        channels_info = []
+        for key in channels:
+            ch_info = channels[key]
+            if SCI1_Devices(track) in ch_info.devices:
+                channels_info.append(ch_info)
+        msg = f"Device {SCI1_Devices(track).name} uses channels: {', '.join([c.get_channel_user() for c in channels_info])}"
         info_track.append(mido.MetaMessage(type='device_name', name=msg))
         if info:
             logger.info(msg)
+        devices[SCI1_Devices(track)] = channels_info
     midifile.tracks.append(info_track)
 
     wave = None
     for channel in channels.values():
-        stream.seek(channel['data_offset'])
+        stream.seek(channel.data_offset)
         channel_number = read_le(stream)
         if channel_number == SCI1_DIGITAL_CHANNEL_MARKER:
             assert wave is None
@@ -87,7 +95,9 @@ def read_sci1_snd_file(stream, info):
             poly_and_prio = read_le(stream)
             poly = poly_and_prio % 16
             prio = poly_and_prio >> 4
-            midtrack = read_messages(stream, channel['size'] - 2)  # we already read channel_number, poly_and_prio
+            name = f'Channel {channel.get_channel_user()}, used by ' + ', '.join([d.name for d in channel.devices])
+            # we already read channel_number, poly_and_prio -> thus (size=channel.size - 2)
+            midtrack = read_messages(stream, size=channel.size - 2, name=name)
             midifile.tracks.append(midtrack)
 
     return {'midifile': midifile, 'devices': devices, 'wave': wave, 'input_version': 'SCI1+'}
@@ -178,6 +188,8 @@ def save_sci1(midi_wave, input_file, save_file):
                 channels_stream.write(digital['data'])
             channel_sizes[ch] = channels_stream.tell() - channel_offsets[ch]
         channels_bytes = channels_stream.getvalue()
+        if len(channels_bytes) > 0xffff:
+            logger.warning(f"File too big. It's {len(channels_bytes)} bytes, while maximal size should be 65536 bytes")
 
     # make devices table, if doesn't exists
     if channel_nums and not devices:
@@ -217,7 +229,10 @@ def save_sci1(midi_wave, input_file, save_file):
                 device_channels = [c.num for c in devices[device]]
                 for channel in device_channels:
                     write_le(f, 0x0, 2)  # unknown
-                    write_le(f, channel_offsets[channel] + header_size, 2)
+                    try:
+                        write_le(f, channel_offsets[channel] + header_size, 2)
+                    except OverflowError:
+                        raise OverflowError("Offset too big to fit: " + str(channel_offsets[channel] + header_size))
                     write_le(f, channel_sizes[channel], 2)
                 write_le(f, 0xff)
             else:

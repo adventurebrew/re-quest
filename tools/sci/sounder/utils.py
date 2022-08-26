@@ -49,4 +49,13 @@ def write_le(stream, data, length=1):
     stream.write(data.to_bytes(length=length, byteorder='little'))
 
 
+def get_all_channels(devices):
+    result = []
+    for device_channels in devices.values():
+        for c in device_channels:
+            if c.num != 'digital':
+                result.append(c.num)
+    return sorted(list(set(result)))
+
+
 logger = setup_logger()

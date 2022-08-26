@@ -69,7 +69,7 @@ class Test(TestCase):
                 for p in game.glob('*'):
                     if p not in ignored_list:
                         with self.assertNoLogs('sounder', level='ERROR'):
-                            midi_wave = read_snd_file(p, 'AUTO_DETECT', info=False)
+                            midi_wave = read_input(p, 'AUTO_DETECT', input_digital=None, info=False)
                             save_sci1(midi_wave, p, save_file)
                             read_snd_file(Path(save_file), 'AUTO_DETECT', info=False)
         try:
@@ -106,7 +106,7 @@ class Test(TestCase):
         except:
             pass
 
-    def test_add_sample(self):
+    def test_z_add_sample(self):
         _, save_file = tempfile.mkstemp()
         for kind in test_files.glob('*'):
             for game in kind.glob('*'):

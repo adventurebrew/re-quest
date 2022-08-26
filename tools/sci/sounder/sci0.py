@@ -5,9 +5,7 @@ from mido import MidiFile, MidiTrack
 
 from sci_common import SIERRA_SND_HEADER, TICKS_PER_BIT, SCI0_Early_Devices, SCI0_Devices, ChannelInfo
 from sci_common import get_sierra_delay_bytes, read_messages
-from midi import get_midi_channels_of_device
-
-from utils import read_le, logger, read_be, write_le
+from utils import read_le, logger, read_be, write_le, get_all_channels
 
 NUM_OF_CHANNELS = 16
 
@@ -79,7 +77,7 @@ def read_sci0_snd_file(stream, input_version, info):
 
     if not sci0_early:
         for device in [SCI0_Devices.MT_32, SCI0_Devices.GM]:
-            if device in devices and 9 in get_midi_channels_of_device('ALL CHANNELS IN FILE', devices) and 9 not in [c.num for c in devices[device]]:
+            if device in devices and 9 in get_all_channels(devices) and 9 not in [c.num for c in devices[device]]:
                 devices[device].append(ChannelInfo(num=9))
                 logger.info(f"Adding percussion channel (10) to {device.name}")
 
@@ -90,7 +88,7 @@ def read_sci0_snd_file(stream, input_version, info):
     info_track = MidiTrack()
     info_track.append(mido.MetaMessage(type='track_name', name='MIDI_SCI0_HEADER'))
     for device in devices:
-        msg = f"Device {device.name} uses channels {[c.get_channel_user() for c in devices[device]]} with voices {[c.voices for c in devices[device]]}"
+        msg = f"Device {device.name} uses channels {', '.join([c.get_channel_user() for c in devices[device]])} with voices {[c.voices for c in devices[device]]}"
         info_track.append(mido.MetaMessage(type='device_name', name=msg))
         if info:
             logger.info(msg)
