@@ -1,17 +1,16 @@
-# spec:
+# spec:     # TODO move to readme
 # https://wiki.scummvm.org/index.php/SCI/Specifications/Sound/SCI0_Resource_Format
 # https://sciprogramming.com/community/index.php?topic=2072
 
-# create environment with all packages:
-# conda create -n sounder -c conda-forge mido pyaudio wxpython python=3.10
+# create environment with all packages:     # TODO move to readme
+# conda create -n sounder -c conda-forge mido pyaudio av python=3.10
 # conda activate sounder
-# pip install python-rtmidi gooey
+# pip install python-rtmidi wxpython==4.2.0 gooey
 
 # TODO: add .mid files to unit tests
 # TODO: midi: read write devices
-# TODO: gui: get rid of "ok" sounds
-
 # TODO: readme.md
+
 # TODO: license
 # TODO: github: issues - templates?
 
@@ -137,6 +136,7 @@ gooey_misc.progress_bar_dont_display_remaining_time()
 gooey_misc.my_widget_updates(get_sound_devices_in_file)
 gooey_misc.args_replace_underscore_with_spaces()
 gooey_misc.add_func_to_menu()
+gooey_misc.silent_message_dialog()
 
 
 def menu_exit(item, *args, **kwargs):

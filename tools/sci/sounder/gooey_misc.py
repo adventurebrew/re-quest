@@ -112,6 +112,22 @@ def add_func_to_menu():
     orig_menuFunction = MenuBar.handleMenuAction
     MenuBar.handleMenuAction = handleMenuAction
 
+@protected_func
+def silent_message_dialog():
+    def showDialog(title, content, style):
+        import wx.lib.agw.genericmessagedialog as GMD
+        from gooey.gui.lang.i18n import _
+
+        dlg = GMD.GenericMessageDialog(None, content, title, agwStyle=style | wx.OK)
+        dlg.SetYesNoLabels(_('dialog_button_yes'), _('dialog_button_no'))
+        dlg.SetOKLabel(_('dialog_button_ok'))
+        result = dlg.ShowModal()
+        dlg.Destroy()
+        return result
+
+    from gooey.gui.components import modals
+    modals.showDialog = showDialog
+
 
 def find_gooey_object(name, somewhere):
     for child in somewhere.TopLevelParent.configs[0].Children:
