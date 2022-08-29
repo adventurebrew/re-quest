@@ -1,8 +1,10 @@
 from unittest import TestCase
 
+import mido
+
 from tools.sci.sounder.sounder import *
 
-# in order to run, please put relevant sound.* or *.snd file under 'sound files/*/*/'
+# in order to run, please put relevant sound.*, *.snd and *.mid files under 'sound files/{sci0,sci0_early,sci1,mid}/*/'
 # and have some 'sound files/a.mp3'
 from tools.sci.sounder.sounder import read_snd_file
 
@@ -21,7 +23,7 @@ class Test(TestCase):
                 for p in game.glob('*'):
                     if p not in ignored_list:
                         with self.assertNoLogs('sounder', level='ERROR'):
-                            result = read_snd_file(p, 'AUTO_DETECT', info=False)
+                            result = read_input(p, 'AUTO_DETECT', input_digital=None, info=False)
                             # print(p, result['input_version'], result['wave'] is not None)
                             if kind.stem == 'sci0_early':
                                 self.assertEqual(result['input_version'], 'SCI0_EARLY')
@@ -29,6 +31,8 @@ class Test(TestCase):
                                 self.assertEqual(result['input_version'], 'SCI0')
                             elif kind.stem == 'sci1':
                                 self.assertEqual(result['input_version'], 'SCI1+')
+                            elif kind.stem == 'mid':
+                                self.assertEqual(type(result['midifile']), mido.MidiFile)
                             else:
                                 self.fail()
 
@@ -39,7 +43,7 @@ class Test(TestCase):
                 for p in game.glob('*'):
                     if p not in ignored_list:
                         with self.assertNoLogs('sounder', level='ERROR'):
-                            midi_wave = read_snd_file(p, 'AUTO_DETECT', info=False)
+                            midi_wave = read_input(p, 'AUTO_DETECT', input_digital=None, info=False)
                             save_sci0(midi_wave, p, save_file, is_early=True)
                             read_snd_file(Path(save_file), 'AUTO_DETECT', info=False)
         try:
@@ -54,7 +58,7 @@ class Test(TestCase):
                 for p in game.glob('*'):
                     if p not in ignored_list:
                         with self.assertNoLogs('sounder', level='ERROR'):
-                            midi_wave = read_snd_file(p, 'AUTO_DETECT', info=False)
+                            midi_wave = read_input(p, 'AUTO_DETECT', input_digital=None, info=False)
                             save_sci0(midi_wave, p, save_file, is_early=False)
                             read_snd_file(Path(save_file), 'AUTO_DETECT', info=False)
         try:
@@ -84,7 +88,7 @@ class Test(TestCase):
                 for p in game.glob('*'):
                     if p not in ignored_list:
                         with self.assertNoLogs('sounder', level='ERROR'):
-                            midi_wave = read_snd_file(p, 'AUTO_DETECT', info=False)
+                            midi_wave = read_input(p, 'AUTO_DETECT', input_digital=None, info=False)
                             save_midi(midi_wave, p, save_file, save_midi_device='ALL CHANNELS IN FILE')
                             read_midi_file(Path(save_file))
         try:
@@ -99,7 +103,7 @@ class Test(TestCase):
                 for p in game.glob('*'):
                     if p not in ignored_list:
                         with self.assertNoLogs('sounder', level='ERROR'):
-                            midi_wave = read_snd_file(p, 'AUTO_DETECT', info=False)
+                            midi_wave = read_input(p, 'AUTO_DETECT', input_digital=None, info=False)
                             save_wave(midi_wave['wave'], p, save_file)
         try:
             Path(save_file).unlink()

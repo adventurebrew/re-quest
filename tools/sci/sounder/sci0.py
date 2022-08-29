@@ -208,7 +208,7 @@ def find_last_non_digital_offset(stream):
 def clean_stops(messages):
     # required for SCI0, if there is digital channel - it's identified by looking for 0xFC (or 2)
     # but we might have more 0xFC-s in our file, if each track had it's own 'stop' command
-    # this leaves only the last STOP (0xFC) command
+    # this leaves only the last STOP (0xFC) command ...
     result = []
     redundant_stops = len([m for m in messages if m.type == 'stop']) - 1  # remove all but one
     stops = 0
@@ -219,5 +219,8 @@ def clean_stops(messages):
             stops += 1
             if stops > redundant_stops:
                 result.append(msg)
+    # ... and this adds an ending stop if non existed
+    if stops == 0:
+        result.append(mido.Message(type='stop'))
     assert len([m for m in result if m.type == 'stop']) == 1
     return result

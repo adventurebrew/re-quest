@@ -1,6 +1,4 @@
 import io
-import re
-from ast import literal_eval
 
 import mido
 from mido import MidiFile, MidiTrack
@@ -8,6 +6,7 @@ from mido import MidiFile, MidiTrack
 from sci_common import SIERRA_SND_HEADER, TICKS_PER_BIT, SCI1_Devices, ChannelInfo
 from sci_common import get_sierra_delay_bytes, read_messages
 from utils import read_le, logger, write_le
+from midi import is_regular_msg
 
 SCI1_DIGITAL_CHANNEL_MARKER = 0xfe
 
@@ -115,20 +114,6 @@ def save_sci1(midi_wave, input_file, save_file):
         except KeyError:
             logger.info(f"SAVE SCI1: Ignoring device {orig_device.name}, doesn't have a SCI1 counterpart")
 
-    # TODO: move this out of here
-    # get devices information from midi information track (if exists - probably created by us, when reading a SCI0 file)
-    if not devices:
-        for msg in midifile.tracks[0]:
-            if msg.type == 'device_name' and msg.name.startswith('Device '):
-                m = re.match(r'Device (.*) uses (\[.*)', msg.name)
-                if m:
-                    try:
-                        device = SCI1_Devices[m.group(1)]
-                        channels = literal_eval(m.group(2))
-                        devices[device] = channels
-                    except KeyError:
-                        logger.info(f"SAVE SCI1+: Ignoring device {m.group(1)}, doesn't have a SCI1 counterpart")
-
     # SCI1 makes heavy use of GM - add such track if doesn't exist
     if SCI1_Devices.GM not in devices and SCI1_Devices.MT_32 in devices:
         devices[SCI1_Devices.GM] = devices[SCI1_Devices.MT_32]
@@ -145,7 +130,7 @@ def save_sci1(midi_wave, input_file, save_file):
     # prepare channels data, will be written to file later
     channel_offsets = {}
     channel_sizes = {}
-    channel_nums = sorted(list(set([m.channel for m in messages if not m.is_realtime and not m.is_meta])))
+    channel_nums = sorted(list(set([m.channel for m in messages if is_regular_msg(m)])))
     if midi_wave['wave'] and SCI1_DIGITAL_CHANNEL_MARKER not in channel_nums:
         channel_nums.append(SCI1_DIGITAL_CHANNEL_MARKER)
 
@@ -155,7 +140,7 @@ def save_sci1(midi_wave, input_file, save_file):
             channel_messages[ch] = []
             timer = 0
             for msg in messages:
-                if not msg.is_meta and (msg.is_realtime or msg.channel == ch):
+                if not msg.is_meta and msg.type != 'sysex' and (msg.is_realtime or msg.channel == ch):
                     delta = msg.time - timer
                     timer = msg.time
                     m = msg.copy()
@@ -190,15 +175,6 @@ def save_sci1(midi_wave, input_file, save_file):
         channels_bytes = channels_stream.getvalue()
         if len(channels_bytes) > 0xffff:
             logger.warning(f"File too big. It's {len(channels_bytes)} bytes, while maximal size should be 65536 bytes")
-
-    # make devices table, if doesn't exists
-    if channel_nums and not devices:
-        logger.info(
-            "Couldn't find devices information in first track; using arbitrary values. Contact Zvika if you wish to have control over this")
-        channels = [ChannelInfo(num=ch) for ch in channel_nums]
-        devices[SCI1_Devices.GM] = channels
-        devices[SCI1_Devices.ADLIB] = channels
-        devices[SCI1_Devices.SPEAKER] = [ChannelInfo(num=channel_nums[0])]
 
     # sq3, sound.016, some devices contains non existing channels - clean them
     for device in devices:

@@ -1,13 +1,20 @@
 import math
 import threading
 import time
+import re
 from copy import deepcopy
+from ast import literal_eval
 
 import mido
 from mido import MidiFile, MidiTrack
 from mido.midifiles.tracks import _to_abstime, _to_reltime
 
 from utils import logger, get_all_channels
+from sci_common import SCI1_Devices, ChannelInfo
+
+
+def is_regular_msg(m):
+    return not m.is_realtime and not m.is_meta and m.type != 'sysex'
 
 
 def get_midi_channels_of_device(play_device, devices, ):
@@ -73,6 +80,34 @@ def play_midi(midi_wave, play_device, port=None, verbose=False, gooey_enabled=Fa
         port.send(msg)
 
 
+def get_midi_devices(midifile):
+    devices = {}
+    # get devices information from midi information track (if exists - probably created by us, when reading a SCI0 file)
+    for msg in midifile.tracks[0]:
+        if msg.type == 'device_name' and msg.name.startswith('Device '):
+            m = re.match(r'Device (.*) uses (\[.*)', msg.name)
+            if m:
+                try:
+                    device = SCI1_Devices[m.group(1)]
+                    channels = literal_eval(m.group(2))
+                    devices[device] = channels
+                except KeyError:
+                    logger.info(f"SAVE SCI1+: Ignoring device {m.group(1)}, doesn't have a SCI1 counterpart")
+
+    if not devices:
+        # make devices table, if devices information not found in midi file
+        channel_nums = sorted(list(set([m.channel for m in mido.merge_tracks(midifile.tracks) if is_regular_msg(m)])))
+        if channel_nums:
+            logger.info(
+                "Couldn't find devices information in first track; using arbitrary values. Contact Zvika if you wish to have control over this")
+            channels = [ChannelInfo(num=ch) for ch in channel_nums]
+            devices[SCI1_Devices.GM] = channels
+            devices[SCI1_Devices.ADLIB] = channels
+            devices[SCI1_Devices.SPEAKER] = [ChannelInfo(num=channel_nums[0])]
+
+    return devices
+
+
 def read_midi_file(p):
     midifile = MidiFile(p)
     for track in midifile.tracks:
@@ -83,7 +118,7 @@ def read_midi_file(p):
                 except:
                     pass
 
-    return midifile
+    return {'midifile': midifile, 'wave': None, 'devices': get_midi_devices(midifile)}
 
 
 def save_midi(midi_wave, input_file, save_file, save_midi_device):

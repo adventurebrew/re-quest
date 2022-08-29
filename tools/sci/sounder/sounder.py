@@ -1,6 +1,3 @@
-# TODO: add .mid files to unit tests
-# TODO: midi: read write devices
-
 # TODO: license
 # TODO: github: issues - templates?
 
@@ -26,13 +23,13 @@ from gooey import Gooey, GooeyParser, local_resource_path
 
 import gooey_misc
 from digital import play_wave, save_wave, read_wav_file, convert_audio_to_low_wav
-from midi import play_midi, read_midi_file, save_midi
+from midi import play_midi, read_midi_file, save_midi, is_regular_msg
 from sci_common import SIERRA_SND_HEADER, SCI0_Early_Devices, SCI0_Devices, SCI1_Devices
 from sci0 import read_sci0_snd_file, save_sci0
 from sci1 import read_sci1_snd_file, save_sci1
 from utils import logger
 
-VERSION = "0.4"
+VERSION = "0.5"
 
 
 def read_snd_file(p, input_version, info):
@@ -69,15 +66,14 @@ def read_input(input_file, input_version, input_digital, info):
     if not p.exists():
         raise FileExistsError(f"File doesn't exist: {p.absolute()}")
     if p.suffix.lower() == '.mid':
-        midifile = read_midi_file(p)
-        result = {'midifile': midifile, 'wave': None}
+        result = read_midi_file(p)
     elif p.suffix.lower() == '.snd' or p.stem.lower().startswith('sound'):
         result = read_snd_file(p, input_version, info)
     else:
         raise NameError("Received unsupported file (it should start with sound. or end with .mid/.snd) " + input_file)
     if info:
         messages = mido.merge_tracks(result['midifile'].tracks)
-        channel_nums = sorted(list(set([m.channel for m in messages if not m.is_realtime and not m.is_meta])))
+        channel_nums = sorted(list(set([m.channel for m in messages if is_regular_msg(m)])))
         logger.debug(f"Channels actually used in messages: {[c + 1 for c in channel_nums]}")
         logger.info(f"Midi length: {result['midifile'].length:.1f} seconds")
 
