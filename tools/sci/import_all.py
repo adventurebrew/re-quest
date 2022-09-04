@@ -45,7 +45,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                      description="Downloads translation excel, runs all game's import scripts, compiles and creates an installer.", )
     parser.add_argument("input_game_dir",
-                        help="directory containing CLEAN game dir (probably used for 'export_all') - won't be modified")
+                        help="directory containing CLEAN game dir, with patches, (probably used for 'export_all') - won't be modified")
     parser.add_argument("workingdir", help="directory to put excel, csv and patches files, and installer")
     parser.add_argument("--skip_download", "-s", action='store_true', help="Skip downloading from Google Drive")
     parser.add_argument("--debug", action='store_true', help="create debug files")

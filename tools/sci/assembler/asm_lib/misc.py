@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 MAGIC_8 = 8  # TODO why is it needed??
@@ -45,14 +46,22 @@ def de_escape_string(s):
     return s.replace(r'\"', '"').replace(r"\n", "\n").replace(r"\t", "\t")
 
 
+def get_scripts_directory():
+    return Path(__file__).parent.resolve()
+
+
 class Kernels:
     def __init__(self, srcdir, target, mode):
         if mode == 'disasm':
             kernels_file = Path(srcdir) / '999.voc'
-            kernels_b = kernels_file.read_bytes()
-            assert kernels_b[0:2] == SIERRA_VOCAB_HEADER
-            self.kernels = [k.decode() for k in kernels_b[2:].split(b'\0') if k]
-            (target / 'kernels.csv').write_text('\n'.join([f'{id}, {k}' for id, k in enumerate(self.kernels)]))
+            try:
+                kernels_b = kernels_file.read_bytes()
+                assert kernels_b[0:2] == SIERRA_VOCAB_HEADER
+                self.kernels = [k.decode() for k in kernels_b[2:].split(b'\0') if k]
+                (target / 'kernels.csv').write_text('\n'.join([f'{id}, {k}' for id, k in enumerate(self.kernels)]))
+            except FileNotFoundError:
+                # SQ6 doesn't have this file, copy from SQ1VGA
+                shutil.copyfile(get_scripts_directory() / 'kernels.csv', target / 'kernels.csv')
         else:
             kernels_file = Path(srcdir) / 'kernels.csv'
             kernels_csv = kernels_file.read_text().splitlines()
