@@ -29,7 +29,7 @@ from sci0 import read_sci0_snd_file, save_sci0
 from sci1 import read_sci1_snd_file, save_sci1
 from utils import logger
 
-VERSION = "0.5"
+VERSION = "0.5.1"
 
 
 def read_snd_file(p, input_version, info):

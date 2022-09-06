@@ -1,12 +1,17 @@
+# in order to run, please put relevant sound.*, *.snd and *.mid files under 'sound files/{sci0,sci0_early,sci1,mid}/*/'
+# and have some 'sound files/a.mp3'
+
+import tempfile
 from unittest import TestCase
+from pathlib import Path
 
 import mido
 
-from tools.sci.sounder.sounder import *
-
-# in order to run, please put relevant sound.*, *.snd and *.mid files under 'sound files/{sci0,sci0_early,sci1,mid}/*/'
-# and have some 'sound files/a.mp3'
-from tools.sci.sounder.sounder import read_snd_file
+from sounder import read_input, read_snd_file
+from sci0 import save_sci0
+from sci1 import save_sci1
+from midi import save_midi, read_midi_file
+from digital import save_wave
 
 ignored_list = [
     Path(r'sound files/sci1/sq6/ignored'),
