@@ -11,6 +11,7 @@ import config
 
 MESSAGES_PATTERN = "*.msg"
 SIERRA_MESSAGE_HEADER = b'\x8f\00'
+TRADUSCI_MESSAGE_HEADER = b'\x0f\00'
 SIERRA_CODEPAGE = 'CP437'
 
 
@@ -63,7 +64,7 @@ def messages_export(gamedir, csvdir):
         with open(filename, "rb") as f:
             lob = list(f.read())
 
-        assert bytes(lob[:2]) == SIERRA_MESSAGE_HEADER
+        assert bytes(lob[:2]) in {SIERRA_MESSAGE_HEADER, TRADUSCI_MESSAGE_HEADER}, bytes(lob[:2])
         lob = lob[2:]
         index = 0
         version = read_le(lob, index)

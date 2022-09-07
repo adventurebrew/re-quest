@@ -10,6 +10,7 @@ import binascii
 import config
 
 SIERRA_MESSAGE_HEADER = b'\x8f\00'
+TRADUSCI_MESSAGE_HEADER = b'\x0f\00'
 SIERRA_CODEPAGE = 'CP437'
 
 
@@ -24,7 +25,7 @@ def read_le(l, idx):
 
 
 def update_msg(original, entries):
-    assert bytes(original[:2]) == SIERRA_MESSAGE_HEADER
+    assert bytes(original[:2]) in {SIERRA_MESSAGE_HEADER, TRADUSCI_MESSAGE_HEADER}, bytes(original[:2])
     lob = original[2:]
     index = 0
     version = read_le(lob, index)
