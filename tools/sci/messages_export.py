@@ -125,7 +125,7 @@ def messages_export(gamedir, csvdir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                      description='Exports text from messages files (*.msg) to csv file', )
-    parser.add_argument("gamedir", help="directory containing the game files (as patches - see below)")
+    parser.add_argument("gamedir", help="directory containing the game files (as patches - see 'export_all' help)")
     parser.add_argument("csvdir", help="directory to write messages.csv")
     args = parser.parse_args()
 
