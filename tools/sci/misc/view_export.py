@@ -1,14 +1,21 @@
 # NOTE! currently only working on SQ6 (and probably its era as well)
 
+# install Tesseract from https://github.com/UB-Mannheim/tesseract/wiki
+
 import argparse
 import io
+import re
 from enum import Enum
 from itertools import chain
 from pathlib import Path
+
 from PIL import Image
 import numpy as np
+import pandas as pd
+import pytesseract
 
 SIERRA_VIEW_HEADER = b'\x80'
+SIERRA_PAL_HEADER = b'\x8b\x00'
 
 
 class ViewTypes(Enum):
@@ -45,16 +52,23 @@ def get_view_type(stream):
     return view_type
 
 
-def write_image(cel, view, loop_num, cel_num, viewspath):
+def write_image(cel, view, loop_num, cel_num, viewspath, default_palette):
     # TODO write colored picture, with game's palettes
-    array = np.array(cel, dtype=np.uint8)
-    new_image = Image.fromarray(array)
+    buffer = b''
+    for row in cel:
+        for pixel in row:
+            color = default_palette[pixel]
+            # assert color['used']  #TODO
+            buffer += bytes([color['r']])
+            buffer += bytes([color['g']])
+            buffer += bytes([color['b']])
+    new_image = Image.frombytes('RGB', (len(cel[0]), len(cel)), buffer)
     im_path = viewspath / f'view_{view}_loop_{loop_num}_cel_{cel_num}.png'
     new_image.save(im_path)
     return im_path
 
 
-def write_view(p, viewspath):
+def write_view(p, viewspath, default_palette):
     result = []
     assert p.suffix == '.v56'
     view = p.stem
@@ -132,30 +146,115 @@ def write_view(p, viewspath):
                         for _ in range(length):
                             row_pixels.append(read_le(literal))
                     num_of_pixels += length
-                # print(''.join([chr(p + 32) for p in row_pixels]))
+                # print(''.join([chr(p + 40) for p in row_pixels]))
                 cel.append(row_pixels)
-            impath = write_image(cel, view, loop_num, cel_num, viewspath)
+            impath = write_image(cel, view, loop_num, cel_num, viewspath, default_palette)
             result.append(impath)
     return result
 
 
-def view_export(gamedir, csvdir):
+def extract_text(view):
+    for psm in [None, 6]:
+        if psm is None:
+            result = pytesseract.image_to_string(Image.open(view))
+        else:
+            result = pytesseract.image_to_string(Image.open(view), config=f'--psm {psm}')
+        if result:
+            return result
+    return ''
+
+
+def get_height(view):
+    im = Image.open(view)
+    width, height = im.size
+    return height
+
+
+def write_excel(views, csvdir):
+    excel_path = Path(csvdir) / 'views.xlsx'
+    data = []
+    for view in views:
+        r = re.match('view_(\d+)_loop_(\d+)_cel_(\d+)', view.stem)
+        view_num = int(r.group(1))
+        loop = int(r.group(2))
+        cel = int(r.group(3))
+        text = extract_text(view)
+        data.append({
+            'view': view_num,
+            'loop': loop,
+            'cel': cel,
+            'text': text,
+            'translation': '',
+            'image': '',
+        })
+    df = pd.DataFrame(data)
+    writer = pd.ExcelWriter(excel_path, engine='xlsxwriter')
+    df.to_excel(writer, sheet_name='Sheet1')
+    worksheet = writer.sheets['Sheet1']
+    for row, view in enumerate(views):
+        # write in row+1, 6th column (from 0), 'Move and size with cells'
+        worksheet.insert_image(row + 1, 6, view, {'object_position': 1})
+        worksheet.set_row_pixels(row + 1, get_height(view) + 15)  # 15 pixels for spacing
+
+    writer.save()
+
+
+def read_pal(gamepath, pal_num):
+    p = gamepath / f'{pal_num}.pal'
+    stream = io.BytesIO(p.read_bytes())
+    assert stream.read(2) == SIERRA_PAL_HEADER
+    stream = io.BytesIO(stream.read())  # chop the first 2 bytes - it's only confusing for offsets
+    num_of_palettes = read_at(stream, 10)
+    assert num_of_palettes == 1
+    pal_pointer = 13 + (2 * num_of_palettes)
+    start_color = read_at(stream, pal_pointer + 10)
+    num_of_colors = read_at(stream, pal_pointer + 14, length=2)
+    used = bool(read_at(stream, pal_pointer + 16))
+    shared_used = bool(read_at(stream, pal_pointer + 17))
+    version = read_at(stream, pal_pointer + 18, length=4)
+
+    last_color = start_color + num_of_colors
+    assert last_color <= 256
+
+    stream.seek(pal_pointer + 22)
+
+    colors = []
+    for i in range(256):
+        colors.append({'used': False, 'r': 0, 'g': 0, 'b': 0})
+    for k in range(num_of_colors):
+        i = start_color + k
+        if shared_used:
+            colors[i]['used'] = used
+        else:
+            colors[i]['used'] = read_le(stream)
+        colors[i]['r'] = read_le(stream)
+        colors[i]['g'] = read_le(stream)
+        colors[i]['b'] = read_le(stream)
+    return colors
+
+
+def view_export(gamepath, csvdir):
     views = []
     viewspath = Path(csvdir) / 'views'
     viewspath.mkdir(exist_ok=True)
-    for p in chain(gamedir.glob('view.*'), gamedir.glob('97*.v56')):  # TODO replace 999 with *
-        views.extend(write_view(p, viewspath))
-    for v in views:
-        print(v)
+    default_palette = read_pal(gamepath, 999)
+    for p in chain(gamepath.glob('view.*'), gamepath.glob('970.v56')):  # TODO replace 999 with *
+        views.extend(write_view(p, viewspath, default_palette))
+    write_excel(views, csvdir)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                     description='CURRENTLY WORKING ONLY SQ6 (AND PROBABLY ITS ERA)\n'
+                                     description='=== CURRENTLY WORKING ONLY SQ6 (AND PROBABLY ITS ERA) ===\n'
                                                  'Exports views from *.v56 or view.* files to an Excel file\n'
                                                  "Note that this script *isn't* part of translation's 'export_all' flow", )
     parser.add_argument("gamedir", help="directory containing the game files (as patches - see 'export_all' help)")
     parser.add_argument("csvdir", help="directory to write messages.csv")
+    parser.add_argument("--tesseract", "-t",
+                        help="path of installed Tesseract (download from https://github.com/UB-Mannheim/tesseract/wiki)",
+                        default=r"C:\Program Files\Tesseract-OCR\tesseract.exe")
     args = parser.parse_args()
+
+    pytesseract.pytesseract.tesseract_cmd = args.tesseract
 
     view_export(Path(args.gamedir), args.csvdir)
