@@ -10,7 +10,6 @@ from itertools import chain
 from pathlib import Path
 
 from PIL import Image
-import numpy as np
 import pandas as pd
 import pytesseract
 
@@ -52,13 +51,11 @@ def get_view_type(stream):
     return view_type
 
 
-def write_image(cel, view, loop_num, cel_num, viewspath, default_palette):
-    # TODO write colored picture, with game's palettes
+def write_image(cel, view, loop_num, cel_num, viewspath, palette):
     buffer = b''
     for row in cel:
         for pixel in row:
-            color = default_palette[pixel]
-            # assert color['used']  #TODO
+            color = palette[pixel]
             buffer += bytes([color['r']])
             buffer += bytes([color['g']])
             buffer += bytes([color['b']])
@@ -88,13 +85,21 @@ def write_view(p, viewspath, default_palette):
     y_resolution = read_at(stream, OFFSET + 16, length=2)
     for loop_num in range(loop_count):
         mirror_x = False  # TODO respect mirror_x
+        if mirror_x:
+            print('mirror', view, loop_num)  # TODO remove
         loop_header = OFFSET + 2 + view_header_size + (loop_header_size * loop_num)
         if read_at(stream, loop_header + 0) != 0xff:  # it's actually -1
             if read_at(stream, loop_header + 1) == 1:
                 mirror_x = True
         cel_count = read_at(stream, loop_header + 2)
         # assert cel_count >= 1 # TODO it fails on SQ6, view 0, loop 1 - needs investigation, probably because it's mirrored
-        hunk_palette_offset = read_at(stream, loop_header + 8, length=4)
+        hunk_palette_offset = read_at(stream, OFFSET + 8, length=4)
+        if hunk_palette_offset:
+            stream.seek(OFFSET + hunk_palette_offset)
+            hunk = io.BytesIO(stream.read())
+            hunk_palette = read_pal(hunk)
+        else:
+            hunk_palette = None
         for cel_num in range(cel_count):
             cel_header_offset = OFFSET + \
                                 read_at(stream, loop_header + 12, length=4) + \
@@ -148,9 +153,21 @@ def write_view(p, viewspath, default_palette):
                     num_of_pixels += length
                 # print(''.join([chr(p + 40) for p in row_pixels]))
                 cel.append(row_pixels)
-            impath = write_image(cel, view, loop_num, cel_num, viewspath, default_palette)
+            palette = choose_palette(default_palette, hunk_palette, p)
+            impath = write_image(cel, view, loop_num, cel_num, viewspath, palette)
             result.append(impath)
     return result
+
+
+def choose_palette(default_palette, hunk_palette, p):
+    if hunk_palette:
+        return hunk_palette
+    # this is a nice idea, but not really working...
+    # it's OK for SQ6 100.v56, but not for SQ6 0.v56
+    # elif p.with_suffix('.pal').exists():
+    #     return read_pal_file(p.with_suffix('.pal'))
+    else:
+        return default_palette
 
 
 def extract_text(view):
@@ -170,40 +187,55 @@ def get_height(view):
     return height
 
 
-def write_excel(views, csvdir):
-    excel_path = Path(csvdir) / 'views.xlsx'
-    data = []
-    for view in views:
-        r = re.match('view_(\d+)_loop_(\d+)_cel_(\d+)', view.stem)
-        view_num = int(r.group(1))
-        loop = int(r.group(2))
-        cel = int(r.group(3))
-        text = extract_text(view)
-        data.append({
-            'view': view_num,
-            'loop': loop,
-            'cel': cel,
-            'text': text,
-            'translation': '',
-            'image': '',
-        })
+def write_excel(data, excel_path):
+    for i, row in enumerate(data):
+        row['i'] = i
+        row['text'] = extract_text(row['path']).strip()
+        num_of_letters = len([c for c in row['text'] if c.isalnum()])
+        if num_of_letters > 10:
+            row['text_kind'] = 1
+        elif num_of_letters > 4:
+            row['text_kind'] = 2
+        else:
+            row['text_kind'] = 10 - num_of_letters
+        row['translation'] = ''
+        row['image'] = ''
+        if row['text']:
+            print(row['text'], row['text_kind'])
+
     df = pd.DataFrame(data)
+    df = df.sort_values(['text_kind', 'i'], ascending=True)
+    df = df.drop('i', axis=1)
+    df = df.drop('text_kind', axis=1)
+    df_clean = df.drop('path', axis=1)
     writer = pd.ExcelWriter(excel_path, engine='xlsxwriter')
-    df.to_excel(writer, sheet_name='Sheet1')
+    df_clean.to_excel(writer, sheet_name='Sheet1')
     worksheet = writer.sheets['Sheet1']
-    for row, view in enumerate(views):
-        # write in row+1, 6th column (from 0), 'Move and size with cells'
-        worksheet.insert_image(row + 1, 6, view, {'object_position': 1})
-        worksheet.set_row_pixels(row + 1, get_height(view) + 15)  # 15 pixels for spacing
+    i = 1
+    image_column = len(df_clean.columns)
+    print("Inserting images")
+    for index, row in df.iterrows():
+        if i % 10 == 0:
+            print(i)
+        worksheet.insert_image(i, image_column, row['path'], {'object_position': 1})
+        worksheet.set_row_pixels(i, get_height(row['path']) + 15)  # 15 pixels for spacing
+        i += 1
+
+    format = writer.book.add_format({'text_wrap': True})
+    format.set_align('top')
+    worksheet.set_column(image_column - 2, image_column, 40, format)
 
     writer.save()
 
 
-def read_pal(gamepath, pal_num):
-    p = gamepath / f'{pal_num}.pal'
+def read_pal_file(p):
     stream = io.BytesIO(p.read_bytes())
     assert stream.read(2) == SIERRA_PAL_HEADER
     stream = io.BytesIO(stream.read())  # chop the first 2 bytes - it's only confusing for offsets
+    return read_pal(stream)
+
+
+def read_pal(stream):
     num_of_palettes = read_at(stream, 10)
     assert num_of_palettes == 1
     pal_pointer = 13 + (2 * num_of_palettes)
@@ -212,6 +244,7 @@ def read_pal(gamepath, pal_num):
     used = bool(read_at(stream, pal_pointer + 16))
     shared_used = bool(read_at(stream, pal_pointer + 17))
     version = read_at(stream, pal_pointer + 18, length=4)
+    assert version == 0
 
     last_color = start_color + num_of_colors
     assert last_color <= 256
@@ -237,10 +270,28 @@ def view_export(gamepath, csvdir):
     views = []
     viewspath = Path(csvdir) / 'views'
     viewspath.mkdir(exist_ok=True)
-    default_palette = read_pal(gamepath, 999)
-    for p in chain(gamepath.glob('view.*'), gamepath.glob('970.v56')):  # TODO replace 999 with *
+    default_palette = read_pal_file(gamepath / '999.pal')
+    for p in chain(gamepath.glob('view.*'), gamepath.glob('*.v56')):
+        print(p)
         views.extend(write_view(p, viewspath, default_palette))
-    write_excel(views, csvdir)
+
+    data = []
+    for view in views:
+        r = re.match('view_(\d+)_loop_(\d+)_cel_(\d+)', view.stem)
+        view_num = int(r.group(1))
+        loop = int(r.group(2))
+        cel = int(r.group(3))
+        data.append({
+            # mandatory
+            'path': view,
+
+            # optional
+            'view': view_num,
+            'loop': loop,
+            'cel': cel,
+        })
+    print('\nWriting excel')
+    write_excel(data, Path(csvdir) / 'views.xlsx')
 
 
 if __name__ == "__main__":
