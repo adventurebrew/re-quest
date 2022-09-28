@@ -9,9 +9,10 @@ from enum import Enum
 from itertools import chain
 from pathlib import Path
 
-from PIL import Image
 import pandas as pd
+import numpy as np
 import pytesseract
+from PIL import Image
 
 SIERRA_VIEW_HEADER = b'\x80'
 SIERRA_PAL_HEADER = b'\x8b\x00'
@@ -65,7 +66,7 @@ def write_image(cel, view, loop_num, cel_num, viewspath, palette):
     return im_path
 
 
-def write_view(p, viewspath, default_palette):
+def export_view(p, viewspath, default_palette):
     result = []
     assert p.suffix == '.v56'
     view = p.stem
@@ -100,6 +101,7 @@ def write_view(p, viewspath, default_palette):
             hunk_palette = read_pal(hunk)
         else:
             hunk_palette = None
+        cels = []
         for cel_num in range(cel_count):
             cel_header_offset = OFFSET + \
                                 read_at(stream, loop_header + 12, length=4) + \
@@ -153,9 +155,25 @@ def write_view(p, viewspath, default_palette):
                     num_of_pixels += length
                 # print(''.join([chr(p + 40) for p in row_pixels]))
                 cel.append(row_pixels)
-            palette = choose_palette(default_palette, hunk_palette, p)
-            impath = write_image(cel, view, loop_num, cel_num, viewspath, palette)
-            result.append(impath)
+            # result.append(impath)
+            cels.append(cel)
+        result.extend(handle_cels(cels, view, loop_num, viewspath, default_palette, hunk_palette, p))
+    return result
+
+
+def handle_cels(cels, view, loop_num, viewspath, default_palette, hunk_palette, p):
+    result = []
+    palette = choose_palette(default_palette, hunk_palette, p)
+    # for cel_1, cel_2 in zip(cels, cels[1:]):
+    #     diff = np.array(cel_2) - np.array(cel_1)
+    #     n_frob = np.linalg.norm(diff)
+    #     n_inf = np.linalg.norm(diff, ord=np.inf)
+    #     n_2 = np.linalg.norm(diff, ord=2)
+    #     n_1 = np.linalg.norm(diff, ord=1)
+    #     print(f'view: {view}, loop_num: {loop_num}, frob: {n_frob:.1f}, inf: {n_inf:.1f}, 2: {n_2:.1f}, 1: {n_1:.1f}')
+
+    for cel_num, cel in enumerate(cels):
+        result.append(write_image(cel, view, loop_num, cel_num, viewspath, palette))
     return result
 
 
@@ -170,13 +188,24 @@ def choose_palette(default_palette, hunk_palette, p):
         return default_palette
 
 
-def extract_text(view):
-    for psm in [None, 6]:
-        if psm is None:
-            result = pytesseract.image_to_string(Image.open(view))
-        else:
-            result = pytesseract.image_to_string(Image.open(view), config=f'--psm {psm}')
+def extract_text(view, scale=1.5):
+    with Image.open(view) as im:
+        (width, height) = (int(im.width * scale), int(im.height * scale))
+        im_resized = im.resize((width, height))
+    print("***************   " + str(height))
+    if height<40:
+        psms = [6, 9]
+    else:
+        psms = [3,]
+    for psm in psms:
+        try:
+            result = pytesseract.image_to_string(im_resized, config=f'--psm {psm}').strip()
+            if get_num_of_letters(result) < 2:
+                result = None
+        except:
+            result = None
         if result:
+            # print(f"psm: {psm}, result: {result}   !!!")
             return result
     return ''
 
@@ -190,8 +219,8 @@ def get_height(view):
 def write_excel(data, excel_path):
     for i, row in enumerate(data):
         row['i'] = i
-        row['text'] = extract_text(row['path']).strip()
-        num_of_letters = len([c for c in row['text'] if c.isalnum()])
+        row['text'] = extract_text(row['path'])
+        num_of_letters = get_num_of_letters(row['text'])
         if num_of_letters > 10:
             row['text_kind'] = 1
         elif num_of_letters > 4:
@@ -204,6 +233,7 @@ def write_excel(data, excel_path):
             print(row['text'], row['text_kind'])
 
     df = pd.DataFrame(data)
+    df = df[df.text_kind < 10]  # i.e., it has not letters
     df = df.sort_values(['text_kind', 'i'], ascending=True)
     df = df.drop('i', axis=1)
     df = df.drop('text_kind', axis=1)
@@ -226,6 +256,10 @@ def write_excel(data, excel_path):
     worksheet.set_column(image_column - 2, image_column, 40, format)
 
     writer.save()
+
+
+def get_num_of_letters(t):
+    return len([c for c in t if c.isalnum()])
 
 
 def read_pal_file(p):
@@ -266,15 +300,18 @@ def read_pal(stream):
     return colors
 
 
-def view_export(gamepath, csvdir):
+def export_all_views(gamepath, csvdir):
     views = []
     viewspath = Path(csvdir) / 'views'
     viewspath.mkdir(exist_ok=True)
     default_palette = read_pal_file(gamepath / '999.pal')
-    for p in chain(gamepath.glob('view.*'), gamepath.glob('*.v56')):
+    for p in chain(gamepath.glob('view.*'), gamepath.glob('11*.v56')):
         print(p)
-        views.extend(write_view(p, viewspath, default_palette))
+        views.extend(export_view(p, viewspath, default_palette))
+    send_views_to_excel(views, csvdir)
 
+
+def send_views_to_excel(views, csvdir):
     data = []
     for view in views:
         r = re.match('view_(\d+)_loop_(\d+)_cel_(\d+)', view.stem)
@@ -301,6 +338,8 @@ if __name__ == "__main__":
                                                  "Note that this script *isn't* part of translation's 'export_all' flow", )
     parser.add_argument("gamedir", help="directory containing the game files (as patches - see 'export_all' help)")
     parser.add_argument("csvdir", help="directory to write messages.csv")
+    parser.add_argument("--pictures", "-p", action='store_true',
+                        help="'gamedir' contains already exported views as .png, instead of raw views")
     parser.add_argument("--tesseract", "-t",
                         help="path of installed Tesseract (download from https://github.com/UB-Mannheim/tesseract/wiki)",
                         default=r"C:\Program Files\Tesseract-OCR\tesseract.exe")
@@ -308,4 +347,7 @@ if __name__ == "__main__":
 
     pytesseract.pytesseract.tesseract_cmd = args.tesseract
 
-    view_export(Path(args.gamedir), args.csvdir)
+    if not args.pictures:
+        export_all_views(Path(args.gamedir), args.csvdir)
+    else:
+        send_views_to_excel((Path(args.csvdir) / 'views').glob('*.png'), args.csvdir)
