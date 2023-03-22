@@ -13,7 +13,7 @@ RESOURCE_ENTRY = struct.Struct('<4H')
 
 class SCI0FileEntry(NamedTuple):
     resid: int
-    archive_num: int
+    volume: int
     offset: int
 
 
@@ -70,7 +70,7 @@ class SCI0Archive(BaseArchive[SCI0FileEntry]):
         if not self._filename:
             raise ValueError('Must open via filename')
         archive = (
-            self._filename.parent / f'{self._filename.stem}.{entry.archive_num:03d}'
+            self._filename.parent / f'{self._filename.stem}.{entry.volume:03d}'
         )
         with self._io.open(archive, 'rb') as stream:
             stream.seek(entry.offset)
