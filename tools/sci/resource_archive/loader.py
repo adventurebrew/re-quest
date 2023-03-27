@@ -6,9 +6,9 @@ from typing import Iterable, Optional, Union
 
 RESOURCE_MAP_SUPPORTED = False
 try:
-    from . import sci0_resource
+    from . import sci_resource
 except ImportError:
-    sci0_resource = None
+    sci_resource = None
 else:
     RESOURCE_MAP_SUPPORTED = True
 
@@ -19,7 +19,7 @@ def load_resources(
     patches: Optional[Iterable[str]] = (),
     pattern: str = '*'
 ):
-    """Dynamically load resources of SCI0 game in given base_dir, of given glob pattern
+    """Dynamically load resources of SCI game in given base_dir, of given glob pattern
     First it tries to load from patches directory, ordered by priority, by default it only search the base directory
     If given None explicitly, it will skip loading files from directory completely
     Then, it tries loading archive files, by specifying resource map (resmap) for remaining files,
@@ -45,7 +45,7 @@ def load_resources(
         for rp in itertools.chain(patches, ('.',)):
             patch_dir = base_dir / rp
             for entry in patch_dir.glob(pattern):
-                if entry.name not in parsed_files:
+                if not (entry.is_dir() or entry.name in parsed_files):
                     parsed_files.add(entry.name)
                     yield entry
 
@@ -55,7 +55,7 @@ def load_resources(
             print('To enable it, please run the following command:\n  pip install git+https://github.com/adventurebrew/pakal.git')
             return
 
-        with sci0_resource.open(base_dir / resmap) as archive:
+        with sci_resource.open(base_dir / resmap) as archive:
             for entry in archive.glob(pattern):
                 if entry.name not in parsed_files:
                     parsed_files.add(entry.name)
