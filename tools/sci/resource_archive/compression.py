@@ -1,83 +1,143 @@
+from collections import deque
+
+def create_lsb_bitsream(data):
+    bits = ''.join(f'{x:08b}'[::-1] for x in data)
+    return (int(x) for x in bits)
+
+
+def collect_lsb_bits(bitstream, count):
+    return int(''.join(str(next(bitstream)) for _ in range(count))[::-1], 2)
+
+
+def create_msb_bitsream(data):
+    bits = ''.join(f'{x:08b}' for x in data)
+    return (int(x) for x in bits)
+
+
+def collect_msb_bits(bitstream, count):
+    return int(''.join(str(next(bitstream)) for _ in range(count)), 2)
 
 
 # SCI Resource Decompression algorithms, based on SCICompanion implementation:
 # https://github.com/Kawa-oneechan/SCICompanion/blob/master/SCICompanionLib/Src/Util/Codec.cpp
 
 def decompress_lzw(src, decomp_size, complength):
-    bitlen = 9
-    bitmask = 0x01FF
-    bitctr = 0
-    bytectr = 0
-    maxtoken = 0x200
-
-    tokenlist = [0 for _ in range(4096)]
-    tokenlengthlist = [0 for _ in range(4096)]
-    tokenctr = 0x102
+    tokens = [(0, 0) for _ in range(4096)]
 
     tokenlastlength = 0
-    destctr = 0
+
+    numbits = 9
+    curtoken = 0x102
+    endtoken = 0x1ff
 
     output = bytearray(decomp_size)
+    opos = 0
+    bs = create_lsb_bitsream(src)
 
-    while bytectr < complength:
+    while opos < decomp_size:
 
-        tokenmaker = src[bytectr] >> bitctr
-        bytectr += 1
-        if bytectr < complength:
-            tokenmaker |= src[bytectr] << (8 - bitctr)
-            tokenmaker %= 2**32
-        if bytectr + 1 < complength:
-            tokenmaker |= src[bytectr + 1] << (16 - bitctr)
-            tokenmaker %= 2**32
-
-        token = tokenmaker & bitmask
-        assert token % 4096 == token, token
-
-        bitctr += bitlen - 8
-
-        bytectr += bitctr // 8
-        bitctr %= 8
+        token = collect_lsb_bits(bs, numbits)
 
         if token == 0x101:
             break
 
         if token == 0x100:
-            maxtoken = 0x200
-            bitlen = 9
-            bitmask = 0x01FF
-            tokenctr = 0x0102
+            numbits = 9
+            curtoken = 0x102
+            endtoken = 0x1ff
+            continue
+
+        if token > 0xFF:
+            assert token < curtoken, (token, curtoken)
+            token_data, tokenlastlength = tokens[token]
+            tokenlastlength += 1
+            for i in range(tokenlastlength):
+                output[opos] = output[token_data + i]
+                opos += 1
         else:
+            tokenlastlength = 1
+            output[opos] = token
+            opos += 1
 
-            if token > 0xFF:
-                if token >= tokenctr:
-                    raise ValueError('bad token')
-                else:
-                    tokenlastlength = tokenlengthlist[token] + 1
-                    if destctr + tokenlastlength > decomp_size:
-                        raise ValueError('write beyond size')
-                    for i in range(tokenlastlength):
-                        output[destctr] = output[tokenlist[token] + i]
-                        destctr += 1
-            else:
-                tokenlastlength = 1
-                if destctr >= decomp_size:
-                    raise ValueError('write beyond size - single byte')
-                output[destctr] = token
-                destctr += 1
+        if curtoken > endtoken and numbits < 12:
+            numbits += 1
+            endtoken = (endtoken << 1) + 1
+        if curtoken <= endtoken:
+            tokens[curtoken] = (opos - tokenlastlength, tokenlastlength)
+            curtoken += 1
 
-            if tokenctr == maxtoken:
-                if bitlen < 12:
-                    bitlen += 1
-                    bitmask <<= 1
-                    bitmask |= 1
-                    maxtoken <<= 1
-                else:
-                    continue
 
-            tokenlist[tokenctr] = destctr - tokenlastlength
-            tokenlengthlist[tokenctr] = tokenlastlength
-            tokenctr += 1
+    assert opos <= decomp_size, (opos, decomp_size)
+    assert len(output) == decomp_size, (len(output), decomp_size)
+    return bytes(output)
 
+
+def decompress_comp3(src, decomp_size, complength):
+    bs = create_msb_bitsream(src)
+    output = bytearray(decomp_size)
+
+    opos = 0
+    lastchar = 0
+    lastcode = 0
+
+    tokens = [(0, 0) for _ in range(0x1004)]
+    stak = deque(maxlen=0x1014)
+
+    numbits = 9
+    curtoken = 0x102
+    endtoken = 0x1ff
+    first_iteration = True
+
+    while opos < decomp_size:
+
+        code = collect_msb_bits(bs, numbits) & 0xFFFF
+        if code == 0x101:
+            break
+
+        if first_iteration:
+            lastchar = (code & 0xFF)
+            output[opos] = lastchar
+            opos += 1
+            lastcode = code
+            first_iteration = False
+            continue
+
+        if code == 0x100:
+            numbits = 9
+            curtoken = 0x102
+            endtoken = 0x1ff
+            first_iteration = True
+            continue
+
+        token = code
+        if token >= curtoken:
+            token = lastcode
+            stak.append(lastchar)
+
+        while 0xFF < token < 0x1004:
+            token_data, next_token = tokens[token]
+            stak.append(token_data)
+            token = next_token
+
+        lastchar = token & 0xFF
+        stak.append(lastchar)
+
+        while len(stak) > 0:
+            output[opos] = stak.pop()
+            opos += 1
+
+        if curtoken <= endtoken:
+            tokens[curtoken] = (lastchar, lastcode)
+            curtoken += 1
+            curtoken &= 0xFFFF
+            if curtoken == endtoken and numbits < 12:
+                numbits += 1
+                endtoken = (endtoken << 1) + 1
+                endtoken &= 0xFFFF
+
+        lastcode = code
+
+    assert opos <= decomp_size, (opos, decomp_size)
     assert len(output) == decomp_size, (len(output), decomp_size)
     return bytes(output)
 
@@ -137,43 +197,16 @@ class DecompressHuffman:
 
 
 def decompress_dcl(src, length, complength):
-
-    _nBits = 0
-    _bytesRead = 0
-    _dwBits = 0
-
-    src = src + b'\0'
+    bs = create_lsb_bitsream(src)
 
     opos = 0
-
-    def fetch_bits_lsb():
-        nonlocal _nBits, _dwBits, _bytesRead
-        while _nBits <= 24:
-            _dwBits |= (src[_bytesRead]) << _nBits
-            _dwBits %= (2 ** 32)
-            _nBits += 8
-            _bytesRead += 1
-
-    def get_bits_lsb(n):
-        nonlocal _nBits, _dwBits
-        if (_nBits < n):
-            fetch_bits_lsb()
-        ret = (_dwBits & ~((0xFFFFFFFF) << n))
-        ret %= (2 ** 32)
-        _dwBits >>= n
-        _nBits -= n
-        return ret
-
-
-    def get_byte_lsb():
-        return get_bits_lsb(8)
 
     HUFFMAN_LEAF = 0x40000000
     def huffman_lookup(tree):
         hpos = 0
 
         while not (tree[hpos] & HUFFMAN_LEAF):
-            bit = get_bits_lsb(1)
+            bit = collect_lsb_bits(bs, 1)
             hpos = (tree[hpos] & 0xFFF) if bit else (tree[hpos] >> 12)
 
         return tree[hpos] & 0xFFFF
@@ -379,25 +412,25 @@ def decompress_dcl(src, length, complength):
         LN(509, 128),      LN(510, 26),
    ]
 
-    mode = get_byte_lsb()
-    dtype = get_byte_lsb()
+    mode = collect_lsb_bits(bs, 8)
+    dtype = collect_lsb_bits(bs, 8)
     output = bytearray(length)
     while opos < length:
-        if get_bits_lsb(1):
+        if collect_lsb_bits(bs, 1):
             value = huffman_lookup(length_tree)
             if value < 8:
                 val_length = value + 2
             else:
                 assert value > 7, value
-                val_length = 8 + (1 << (value - 7)) + get_bits_lsb(value - 7)
+                val_length = 8 + (1 << (value - 7)) + collect_lsb_bits(bs, value - 7)
 
             val_length %= (2 ** 32)
             value = huffman_lookup(distance_tree)
 
             if val_length == 2:
-                val_distance = (value << 2) | get_bits_lsb(2)
+                val_distance = (value << 2) | collect_lsb_bits(bs, 2)
             else:
-                val_distance = (value << dtype) | get_bits_lsb(dtype)
+                val_distance = (value << dtype) | collect_lsb_bits(bs, dtype)
             val_distance += 1
             val_distance %= (2 ** 32)
 
@@ -413,7 +446,7 @@ def decompress_dcl(src, length, complength):
                 val_length -= copy_length
                 val_distance += copy_length
         else:
-            value = huffman_lookup(ascii_tree) if mode == 1 else get_byte_lsb()
+            value = huffman_lookup(ascii_tree) if mode == 1 else collect_lsb_bits(bs, 8)
             output[opos] = value
             opos += 1
 

@@ -5,7 +5,8 @@ from typing import IO, Iterator, NamedTuple
 
 from pakal.archive import ArchiveIndex, BaseArchive, make_opener
 
-from .compression import DecompressHuffman, decompress_lzw, decompress_dcl
+from .compression import DecompressHuffman, decompress_comp3, decompress_dcl
+from .codec import reorderPic, reorderView
 
 LOOKUP_ENTRY = struct.Struct('<BH')
 MAP_ENTRY_SCI10 = struct.Struct('<HI')
@@ -142,10 +143,14 @@ class SCI1Archive(BaseArchive[SCI1FileEntry]):
             if method == 0:
                 assert decomp_size == comp_size, (decomp_size, comp_size, method)
                 decomp_data = stream.read(decomp_size)
-            # elif method == 3:
-            #     decomp_data = decompress_lzw(
-            #         stream.read(comp_size), decomp_size, comp_size
-            #     )
+            elif method in {2, 3, 4}:
+                decomp_data = decompress_comp3(
+                    stream.read(comp_size), decomp_size, comp_size
+                )
+                if method == 3:
+                    decomp_data = reorderView(decomp_data)
+                if method == 4:
+                    decomp_data = reorderPic(decomp_data, decomp_size)
             elif method == 1:
                 decomp_data = DecompressHuffman().decompress_huffman(
                     stream.read(comp_size),
