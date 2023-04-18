@@ -170,7 +170,7 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
                     write_le(f, 0)  # TODO write voices for ADLIB
                     hw = SCI0_Devices(0)
                     for device in devices:
-                        if ch in devices[device]:
+                        if ch in [ch_info.num for ch_info in devices[device]]:
                             hw |= device
                     write_le(f, hw.value)
 
