@@ -128,36 +128,10 @@ def get_voices(messages, ch, channels_info):
             current_active[msg.note] = True
     return max_voices
     '''
-	
+
     MAX_ADLIB_CHANNELS = 9
     num_of_channels = len(channels_info)
     return MAX_ADLIB_CHANNELS // num_of_channels
-
-
-def adjust_bank_patch(messages, devices):
-    def relevant(msg, adlib_chs):
-        return msg.type == 'program_change' and msg.channel in adlib_chs and msg.program != 0x7f
-
-    # Adlib supports only up to 48 instruments (see ScummVM's MidiDriver_AdLib::loadResource)
-    adlib_chs = [c.num for c in devices[SCI0_Devices.ADLIB]]
-    instruments = set([m.program for m in messages if relevant(m, adlib_chs)])    # IIRC 0x7f is special
-
-    if not instruments:
-        return messages
-
-    assert max(instruments) < 96   # I might be wrong here, but if I understand correctly, that's the maximum possible value
-
-    if max(instruments) < 48:
-        return messages # all is well
-
-    logger.info('adjusting adlib channel(s) from 96 instruments to 48 instruments')
-    result = []
-    for msg in messages:
-        if relevant(msg, adlib_chs):
-            msg.program //= 2   # TODO is it really good??
-        result.append(msg)
-
-    return result
 
 
 def save_sci0(midi_wave, input_file, save_file, is_early):
@@ -187,7 +161,6 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
         messages = mido.merge_tracks(midifile.tracks)
         if digital:
             messages = clean_stops(messages)
-        messages = adjust_bank_patch(messages, devices)
         for msg in messages:
             if not msg.is_meta:
                 logger.debug('delay: ' + get_sierra_delay_bytes(msg.time).hex())
