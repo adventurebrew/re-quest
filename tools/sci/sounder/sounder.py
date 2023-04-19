@@ -29,7 +29,7 @@ from sci0 import read_sci0_snd_file, save_sci0
 from sci1 import read_sci1_snd_file, save_sci1
 from utils import logger
 
-VERSION = "0.5.1"
+VERSION = "0.5.3"
 
 
 def read_snd_file(p, input_version, info):
@@ -189,7 +189,7 @@ def html_window(item, *args, **kwargs):
                     'name': 'Sounder',
                     'description': "Sierra SCI 'snd' manager",
                     'version': VERSION,
-                    'copyright': '2022',
+                    'copyright': '2023',
                     'website': 'https://github.com/adventurebrew/re-quest/tools/sci/sounder',
                     # 'license': 'MIT'
                     'developer': 'Zvika Haramaty',

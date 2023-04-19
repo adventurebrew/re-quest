@@ -107,6 +107,59 @@ def read_sci0_snd_file(stream, input_version, info):
     return {'midifile': midifile, 'devices': devices, 'wave': wave, 'input_version': input_version}
 
 
+def get_voices(messages, ch, channels_info):
+    '''
+    # this code might create more channels than adlib's limit, e.g. sq3, sound.001
+    # therefore, not using it
+    # leaving it as future reference, for maybe use some proportionate division
+    ch_msgs = [m for m in messages if hasattr(m, 'channel') and m.channel == ch]
+    max_voices = 0
+    cur_time = None
+    current_active = {}
+    for msg in ch_msgs:
+        if msg.time != cur_time:
+            cur_time = msg.time
+            if len(current_active) > max_voices:
+                max_voices = len(current_active)
+        if msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
+            # both commands turn off the note
+            del current_active[msg.note]
+        elif msg.type == 'note_on':
+            current_active[msg.note] = True
+    return max_voices
+    '''
+	
+    MAX_ADLIB_CHANNELS = 9
+    num_of_channels = len(channels_info)
+    return MAX_ADLIB_CHANNELS // num_of_channels
+
+
+def adjust_bank_patch(messages, devices):
+    def relevant(msg, adlib_chs):
+        return msg.type == 'program_change' and msg.channel in adlib_chs and msg.program != 0x7f
+
+    # Adlib supports only up to 48 instruments (see ScummVM's MidiDriver_AdLib::loadResource)
+    adlib_chs = [c.num for c in devices[SCI0_Devices.ADLIB]]
+    instruments = set([m.program for m in messages if relevant(m, adlib_chs)])    # IIRC 0x7f is special
+
+    if not instruments:
+        return messages
+
+    assert max(instruments) < 96   # I might be wrong here, but if I understand correctly, that's the maximum possible value
+
+    if max(instruments) < 48:
+        return messages # all is well
+
+    logger.info('adjusting adlib channel(s) from 96 instruments to 48 instruments')
+    result = []
+    for msg in messages:
+        if relevant(msg, adlib_chs):
+            msg.program //= 2   # TODO is it really good??
+        result.append(msg)
+
+    return result
+
+
 def save_sci0(midi_wave, input_file, save_file, is_early):
     midifile = midi_wave['midifile']
     digital = midi_wave['wave']
@@ -134,6 +187,7 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
         messages = mido.merge_tracks(midifile.tracks)
         if digital:
             messages = clean_stops(messages)
+        messages = adjust_bank_patch(messages, devices)
         for msg in messages:
             if not msg.is_meta:
                 logger.debug('delay: ' + get_sierra_delay_bytes(msg.time).hex())
@@ -167,11 +221,14 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
                     # sv.exe crashed; reading SCICompanion and ScummVM code, it seems that neither support that method
                     write_le(f, 0x0, 2)
                 else:
-                    write_le(f, 0)  # TODO write voices for ADLIB
                     hw = SCI0_Devices(0)
+                    voices = 0
                     for device in devices:
                         if ch in [ch_info.num for ch_info in devices[device]]:
                             hw |= device
+                            if device == SCI0_Devices.ADLIB:
+                                voices = get_voices(messages, ch, devices[device])
+                    write_le(f, voices)
                     write_le(f, hw.value)
 
         # write midi data
