@@ -159,12 +159,12 @@ def save_sci0(midi_wave, input_file, save_file, is_early):
     # prepare midi data first
     with io.BytesIO() as f:
         messages = mido.merge_tracks(midifile.tracks)
-        if digital:
-            messages = clean_stops(messages)
+        messages = clean_stops(messages)
         for msg in messages:
             if not msg.is_meta:
-                logger.debug('delay: ' + get_sierra_delay_bytes(msg.time).hex())
-                logger.debug('msg:' + msg.bin().hex())
+                logger.debug('save_sci0: ' + str(msg))
+                logger.debug('save_sci0:\t delay: ' + get_sierra_delay_bytes(msg.time).hex())
+                logger.debug('save_sci0:\t msg  : ' + msg.bin().hex())
                 f.write(get_sierra_delay_bytes(msg.time))
                 f.write(msg.bin())
         midi_data = f.getvalue()
