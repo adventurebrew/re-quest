@@ -1,8 +1,9 @@
 # TODO: license
 # TODO: github: issues - templates?
 
-# TODO: verify cue, loop in writing (sound.200)
-# TODO: sci0: write adlib - voices?
+# TODO: midi: add info from patch files- https://sciprogramming.com/community/index.php?topic=2078.msg15697#msg15697
+# TODO: verify: cue, loop in writing (sound.200)
+# TODO: verify: sci0: write adlib voices
 
 # TODO: adlib player? (https://pypi.org/project/PyOPL/)
 # TODO: https://github.com/nwhitehead/pyfluidsynth  ?
@@ -29,7 +30,7 @@ from sci0 import read_sci0_snd_file, save_sci0
 from sci1 import read_sci1_snd_file, save_sci1
 from utils import logger
 
-VERSION = "0.5.3"
+VERSION = "0.5.4"
 
 
 def read_snd_file(p, input_version, info):

@@ -7,6 +7,7 @@ from mido import MidiTrack
 from utils import read_le, logger
 
 SIERRA_SND_HEADER = b'\x84\0'
+SIERRA_PATCH_HEADER = b'\x89\0'
 TICKS_PER_BIT = 30
 
 
