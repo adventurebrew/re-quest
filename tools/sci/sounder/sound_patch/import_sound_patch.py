@@ -31,8 +31,8 @@ def write_adlib_patch(patchfile, instruments_dicts):
         add_empty_instruments(instruments, 96)
     elif 97 < current_program  < 190:
         add_empty_instruments(instruments, 190)
-        logger.warning('Adding "rhythm_key_map" of zeroes. If something else is needed, contact Zvika')
         if not rhythm_key_map:
+            logger.warning('Adding "rhythm_key_map" of zeroes. If something else is needed, contact Zvika')
             rhythm_key_map = bytes(62)
 
 
