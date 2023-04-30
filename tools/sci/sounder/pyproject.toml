@@ -6,13 +6,17 @@ authors = ["Zvika Haramaty <haramaty.zvika@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = ">=3.10,<3.11"
 mido = "^1.2.10"
 gooey = "^1.0.8.1"
 python-rtmidi = "^1.4.9"
 av = "^10.0.0"
 pyaudio = "^0.2.13"
+humanhash = "^0.0.1"
 
+
+[tool.poetry.group.dev.dependencies]
+pyinstaller = "4.10"
 
 [build-system]
 requires = ["poetry-core"]
