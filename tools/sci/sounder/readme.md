@@ -8,6 +8,11 @@ Use can either download Windows executable from *Releases*, or prepare Python en
     conda activate sounder
     pip install python-rtmidi wxpython==4.2.0 gooey
 
+Or maybe even simpler:
+
+    pip install -e .
+
+
 And just run
 
     python sounder.py --help

@@ -12,7 +12,7 @@ gooey = "^1.0.8.1"
 python-rtmidi = "^1.4.9"
 av = "^10.0.0"
 pyaudio = "^0.2.13"
-humanhash = "^0.0.1"
+humanhash3 = "^0.0.6"
 
 
 [tool.poetry.group.dev.dependencies]

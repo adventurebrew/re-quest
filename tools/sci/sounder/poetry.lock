@@ -97,14 +97,14 @@ pygtrie = ">=2.3.3"
 wxpython = ">=4.1.0"
 
 [[package]]
-name = "humanhash"
-version = "0.0.1"
+name = "humanhash3"
+version = "0.0.6"
 description = "Human-readable representations of digests."
 category = "main"
 optional = false
 python-versions = "*"
 files = [
-    {file = "humanhash-0.0.1.tar.gz", hash = "sha256:13688e96bd8149ff1016a92179515af3642774a3430c9f509eb063f70a3a2135"},
+    {file = "humanhash3-0.0.6.tar.gz", hash = "sha256:89ae15f6034bdb07e53ac2b2e246cc7131940766d2b2b70b7398dd27c640b1ab"},
 ]
 
 [[package]]
@@ -466,4 +466,4 @@ six = "*"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.11"
-content-hash = "c5997245c123d2a1f47fd4ac876ca7c90d19a7d72896f9ce549bd17e1830abef"
+content-hash = "f05584b100b378bdb08c38d347d3987e08702032b4488077f0297b099c53483c"
