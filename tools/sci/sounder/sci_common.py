@@ -1,3 +1,4 @@
+import re
 import io
 from enum import Flag, Enum
 
@@ -61,6 +62,13 @@ class ChannelInfo:
         self.data_offset = data_offset
         self.size = size
         self.repeated = 0
+
+    def from_midi(self, midi_str, DevicesEnum):
+        # init self according to info in midi_str
+        m = re.match(r'Channel (.*), used by (.*)', midi_str)
+        self.num = int(m.group(1).rstrip("'")) - 1
+        self.devices = [DevicesEnum[d] for d in m.group(2).split(', ')]
+        return self
 
     def __lt__(self, other):
         if self.num != other.num:

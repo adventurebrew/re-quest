@@ -134,7 +134,7 @@ def get_voices(messages, ch, channels_info):
     return MAX_ADLIB_CHANNELS // num_of_channels
 
 
-def save_sci0(midi_wave, input_file, save_file, is_early):
+def save_sci0(midi_wave, input_file, save_file, is_early=False):
     midifile = midi_wave['midifile']
     digital = midi_wave['wave']
 

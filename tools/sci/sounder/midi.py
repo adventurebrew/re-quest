@@ -85,11 +85,20 @@ def get_midi_devices(midifile):
     # get devices information from midi information track (if exists - probably created by us, when reading a SCI0 file)
     for msg in midifile.tracks[0]:
         if msg.type == 'device_name' and msg.name.startswith('Device '):
-            m = re.match(r'Device (.*) uses (\[.*)', msg.name)
+            # TODO handle 'voices' info
+            m = re.match(r'Device (.*) uses channels (.*)', msg.name)
             if m:
                 try:
                     device = SCI1_Devices[m.group(1)]
-                    channels = literal_eval(m.group(2))
+                    channels = [ChannelInfo(None).from_midi(track.name, SCI1_Devices) for track in midifile.tracks if
+                                device.name in track.name]
+                    if not channels:
+                        ch_nums = m.group(2).split(' with voices ')[0].split(', ')
+                        try:
+                            voices = m.group(2).split(' with voices ')[1]
+                        except IndexError:
+                            voices = None
+                        channels = [ChannelInfo(num=int(ch_num) - 1) for ch_num in ch_nums]  # TODO use voices
                     devices[device] = channels
                 except KeyError:
                     logger.info(f"SAVE SCI1+: Ignoring device {m.group(1)}, doesn't have a SCI1 counterpart")

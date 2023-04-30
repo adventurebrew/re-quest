@@ -71,7 +71,7 @@ def read_sci1_snd_file(stream, info):
             ch_info = channels[key]
             if SCI1_Devices(track) in ch_info.devices:
                 channels_info.append(ch_info)
-        msg = f"Device {SCI1_Devices(track).name} uses channels: {', '.join([c.get_channel_user() for c in channels_info])}"
+        msg = f"Device {SCI1_Devices(track).name} uses channels {', '.join([c.get_channel_user() for c in channels_info])}"
         info_track.append(mido.MetaMessage(type='device_name', name=msg))
         if info:
             logger.info(msg)
