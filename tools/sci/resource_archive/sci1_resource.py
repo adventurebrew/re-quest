@@ -5,13 +5,14 @@ from typing import IO, Iterator, NamedTuple
 
 from pakal.archive import ArchiveIndex, BaseArchive, make_opener
 
-from .compression import DecompressHuffman, decompress_comp3, decompress_dcl
+from .compression import DecompressHuffman, decompress_comp3, decompress_dcl, decompress_lzs
 from .codec import reorderPic, reorderView
 
 LOOKUP_ENTRY = struct.Struct('<BH')
 MAP_ENTRY_SCI10 = struct.Struct('<HI')
 MAP_ENTRY_SCI11 = struct.Struct('<2HB')
 RESOURCE_ENTRY = struct.Struct('<B4H')
+RESOURCE_ENTRY32 = struct.Struct('<BH2IH')
 
 
 class SCI1LookupEntry(NamedTuple):
@@ -49,6 +50,41 @@ RES_TYPE = {
 }
 
 
+RES_TYPE32 = {
+    0: 'v56',
+    1: 'p56',
+    2: 'scr',
+    3: 'tex',
+    4: 'snd',
+    5: 'etc',
+    6: 'voc',
+    7: 'fon',
+    8: 'cur',
+    9: 'pat',
+    10: 'bmp',
+    11: 'pal',
+    12: 'au2',
+    13: 'aud',
+    14: 'syn',
+    15: 'msg',
+    16: 'map',
+    17: 'hep',
+    18: 'a36',
+    19: 's36',
+    20: 'trn',
+    21: 'rbt',
+    22: 'vmd',
+    24: 'duk',
+    25: 'clu',
+    26: 'tga',
+    27: 'zzz',
+}
+
+
+def resid_to_name32(resid: int, res_type: int):
+    return f'{resid}.{RES_TYPE32[res_type]}'
+
+
 def resid_to_name(resid: int, res_type: int):
     return f'{resid}.{RES_TYPE[res_type - 0x80]}'
 
@@ -73,18 +109,23 @@ def extract(ctx, stream: IO[bytes]):
 
     possible_entry_maps = {MAP_ENTRY_SCI10, MAP_ENTRY_SCI11}
 
-    for entry, end_offset in zip(lookup, ends):
-        size = end_offset - entry.offset
-        if size % 5 != 0:
-            possible_entry_maps.discard(MAP_ENTRY_SCI11)
-        elif size % 6 != 0:
-            possible_entry_maps.discard(MAP_ENTRY_SCI10)
-    
-    if len(possible_entry_maps) != 1:
-        raise ValueError('Could not detect resource version')
+    if any(entry.res_type < 0x80 for entry in lookup):
+        map_entry_s = MAP_ENTRY_SCI10
+        ctx['sci_version'] = 2
+    else:
 
-    map_entry_s = list(possible_entry_maps)[0]
-    ctx['sci_version'] = 1.1 if map_entry_s == MAP_ENTRY_SCI11 else 1
+        for entry, end_offset in zip(lookup, ends):
+            size = end_offset - entry.offset
+            if size % 5 != 0:
+                possible_entry_maps.discard(MAP_ENTRY_SCI11)
+            elif size % 6 != 0:
+                possible_entry_maps.discard(MAP_ENTRY_SCI10)
+        
+        if len(possible_entry_maps) != 1:
+            raise ValueError('Could not detect resource version')
+
+        map_entry_s = list(possible_entry_maps)[0]
+        ctx['sci_version'] = 1.1 if map_entry_s == MAP_ENTRY_SCI11 else 1
 
     for entry, end_offset in zip(lookup, ends):
         stream.seek(entry.offset)
@@ -98,7 +139,10 @@ def extract(ctx, stream: IO[bytes]):
             else:
                 volume = offset >> 28
                 offset &= 0x0FFFFFFF
-            yield resid_to_name(resid, entry.res_type), SCI1FileEntry(resid, entry.res_type, volume, offset)
+            if ctx['sci_version'] == 2:
+                yield resid_to_name32(resid, entry.res_type), SCI1FileEntry(resid, entry.res_type, volume, offset)
+            else:
+                yield resid_to_name(resid, entry.res_type), SCI1FileEntry(resid, entry.res_type, volume, offset)
 
 
 class SCI1Archive(BaseArchive[SCI1FileEntry]):
@@ -107,6 +151,32 @@ class SCI1Archive(BaseArchive[SCI1FileEntry]):
         res = dict(extract(ctx, self._stream))
         self.sci_version = ctx['sci_version']
         return res
+
+    @contextmanager
+    def read_entry32(self, entry: SCI1FileEntry) -> Iterator[IO[bytes]]:
+        archive = (
+            self._filename.parent / f'RESSCI.{entry.volume:03d}'
+        )
+        with self._io.open(archive, 'rb') as stream:
+            stream.seek(entry.offset)
+            res_entry = stream.read(RESOURCE_ENTRY32.size)
+            res_type, resid, comp_size, decomp_size, method = RESOURCE_ENTRY32.unpack(res_entry)
+            assert (res_type, resid) == (entry.res_type, entry.resid), (resid, entry.resid, res_type, entry.res_type)
+            header = res_type.to_bytes(
+                2, signed=False, byteorder='little'
+            )
+            if comp_size < decomp_size:
+                if method == 32:
+                    decomp_data = decompress_lzs(
+                        stream.read(comp_size),
+                        decomp_size,
+                        comp_size,
+                    )
+                else:
+                    raise ValueError(method)
+            else:
+                decomp_data = stream.read(comp_size)
+            yield io.BytesIO(header + decomp_data)
 
 
     # https://github.com/scummvm/scummvm/blob/f41cc33dffa980616226fb7fcddd8c08efce846c/engines/sci/resource/resource.cpp#L2278-L2281
@@ -118,6 +188,10 @@ class SCI1Archive(BaseArchive[SCI1FileEntry]):
     def _read_entry(self, entry: SCI1FileEntry) -> Iterator[IO[bytes]]:
         if not self._filename:
             raise ValueError('Must open via filename')
+        if self.sci_version >= 2:
+            with self.read_entry32(entry) as resource:
+                yield resource
+            return
         archive = (
             self._filename.parent / f'{self._filename.stem}.{entry.volume:03d}'
         )

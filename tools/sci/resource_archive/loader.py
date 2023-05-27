@@ -2,7 +2,7 @@
 import itertools
 import os
 import pathlib
-from typing import Iterable, Optional, Union
+from typing import Iterable, Optional, Sequence, Union
 
 RESOURCE_MAP_SUPPORTED = False
 try:
@@ -17,7 +17,7 @@ def load_resources(
     base_dir: Union[str, os.PathLike[str]],
     resmap: Optional[str] = 'RESOURCE.MAP',
     patches: Optional[Iterable[str]] = (),
-    pattern: str = '*'
+    patterns: Sequence[str] = ('*',)
 ):
     """Dynamically load resources of SCI game in given base_dir, of given glob pattern
     First it tries to load from patches directory, ordered by priority, by default it only search the base directory
@@ -44,10 +44,11 @@ def load_resources(
     if patches is not None:
         for rp in itertools.chain(patches, ('.',)):
             patch_dir = base_dir / rp
-            for entry in patch_dir.glob(pattern):
-                if not (entry.is_dir() or entry.name in parsed_files):
-                    parsed_files.add(entry.name)
-                    yield entry
+            for pattern in patterns:
+                for entry in patch_dir.glob(pattern):
+                    if not (entry.is_dir() or entry.name in parsed_files):
+                        parsed_files.add(entry.name)
+                        yield entry
 
     if resmap is not None:
         if not RESOURCE_MAP_SUPPORTED:
@@ -56,7 +57,8 @@ def load_resources(
             return
 
         with sci_resource.open(base_dir / resmap) as archive:
-            for entry in archive.glob(pattern):
-                if entry.name not in parsed_files:
-                    parsed_files.add(entry.name)
-                    yield entry
+            for pattern in patterns:
+                for entry in archive.glob(pattern):
+                    if entry.name not in parsed_files:
+                        parsed_files.add(entry.name)
+                        yield entry

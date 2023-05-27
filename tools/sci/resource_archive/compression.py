@@ -453,3 +453,51 @@ def decompress_dcl(src, length, complength):
     assert opos == length
     assert len(output) == length
     return bytes(output)
+
+
+def decompress_lzs(src, length, complength):
+    bs = create_msb_bitsream(src)
+
+    opos = 0
+    output = bytearray(length)
+
+    while opos < length:
+        if collect_msb_bits(bs, 1):
+            if collect_msb_bits(bs, 1):
+                offs = collect_msb_bits(bs, 7)
+                if offs == 0:
+                    break
+            else:
+                offs = collect_msb_bits(bs, 11)
+            clen = get_complen(bs)
+            if clen == 0:
+                raise ValueError(clen)
+            hpos = opos - offs
+            if hpos < 0:
+                raise ValueError(hpos)
+            for i in range(clen):
+                output[opos + i] = output[hpos + i]
+            opos += clen
+        else:
+            output[opos] = collect_msb_bits(bs, 8)
+            opos += 1
+
+    assert opos == length, (opos, length)
+    assert len(output) == length
+    return bytes(output)
+
+
+def get_complen(bs):
+    lng = 2
+    bits = 3
+    while bits == 3 and lng < 8:
+        bits = collect_msb_bits(bs, 2)
+        lng += bits
+    
+    if lng == 8:
+        while True:
+            bits = collect_msb_bits(bs, 4)
+            lng += bits
+            if bits != 15:
+                break
+    return lng
