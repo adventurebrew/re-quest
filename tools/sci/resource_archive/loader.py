@@ -15,7 +15,7 @@ else:
 
 def load_resources(
     base_dir: Union[str, os.PathLike[str]],
-    resmap: Optional[str] = 'RESOURCE.MAP',
+    resmap: Sequence[str] = ('RESOURCE.MAP', 'RESMAP.000'),
     patches: Optional[Iterable[str]] = (),
     patterns: Sequence[str] = ('*',)
 ):
@@ -50,13 +50,16 @@ def load_resources(
                         parsed_files.add(entry.name)
                         yield entry
 
-    if resmap is not None:
+    for rmap in resmap:
         if not RESOURCE_MAP_SUPPORTED:
             print('WARNING: Reading resources from RESOURCE.MAP is skipped because dependecies are missing')
             print('To enable it, please run the following command:\n  pip install git+https://github.com/adventurebrew/pakal.git')
             return
 
-        with sci_resource.open(base_dir / resmap) as archive:
+        resmap_file = base_dir / rmap
+        if not resmap_file.exists():
+            continue
+        with sci_resource.open(resmap_file) as archive:
             for pattern in patterns:
                 for entry in archive.glob(pattern):
                     if entry.name not in parsed_files:
