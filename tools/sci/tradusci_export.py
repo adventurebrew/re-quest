@@ -183,26 +183,11 @@ def load_msg_file(stream):
                 temp_tag = 0
 
             if temp_tag == 0xD00D:
-                idx = ord(stream.read(1))
-                while idx != 0:
-                    nouns[idx] = read_until_null(stream)
+                for names in (nouns, verbs, conditions, talkers):
                     idx = ord(stream.read(1))
-
-                idx = ord(stream.read(1))
-                while idx != 0:
-                    verbs[idx] = read_until_null(stream)
-                    idx = ord(stream.read(1))
-
-                idx = ord(stream.read(1))
-                while idx != 0:
-                    conditions[idx] = read_until_null(stream)
-                    idx = ord(stream.read(1))
-
-                idx = ord(stream.read(1))
-                while idx != 0:
-                    talkers[idx] = read_until_null(stream)
-                    idx = ord(stream.read(1))
-
+                    while idx != 0:
+                        names[idx] = read_until_null(stream)
+                        idx = ord(stream.read(1))
                 temp_tag = read_uint16le(stream)
                 if temp_tag != 0xD0D0:
                     raise ValueError(temp_tag)
