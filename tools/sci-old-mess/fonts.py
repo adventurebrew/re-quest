@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 
-import os
+import pathlib
 import sys
-import math
-import io
-
-from operator import itemgetter
 
 import numpy as np
 
 from PIL import Image
+
+from sci.resource_archive.loader import load_resources
 
 def read_uint16le(stream):
     return int.from_bytes(stream.read(2), byteorder='little', signed=False)
@@ -40,6 +38,7 @@ def resize_pil_image(w, h, bg, im):
     return nbase
 
 def convert(stream):
+    stream.read(2)
     zeroes = read_uint16le(stream)
     assert zeroes == 0
     numchar = read_uint16le(stream)
@@ -59,7 +58,7 @@ def convert(stream):
     get_bg = get_bg_color(grid_size, lambda idx: idx + int(idx / grid_size))
 
     for idx, off in enumerate(offsets):
-        stream.seek(off, 0)
+        stream.seek(off + 2, 0)
         width = ord(stream.read(1))
         cheight = ord(stream.read(1))
         nbytes = (width + 7) // 8
@@ -72,14 +71,33 @@ def convert(stream):
         bim.paste(im, box=((idx % grid_size) * w, int(idx / grid_size) * h))
             # im.save(f'try/char_{idx:03d}.png')
         # print(off, stream.tell())
-    bim.save('font.png')
+    return bim
+
+# Actual color indices are {64, 0, 110, 48, 95}
+palette = [((53 + x) ** 2 * 13 // 5) % 256 for x in range(256 * 3)]
+palette[3*64:3*64+3] = [32, 32, 32]
+palette[3*95:3*95+3] = [217, 217, 217]
+palette[3*48:3*48+3] = [148, 148, 148]
+palette[3*110:3*110+3] = [110, 110, 110]
+palette[3*0:3*0+3] = [172, 172, 172]
 
 if __name__ == '__main__':
     if not len(sys.argv) > 1:
         print('missing arguments')
         exit(1)
 
-    fname = sys.argv[1]
-    with open(fname, 'rb') as f:
-        convert(f)
-    
+    for src in sys.argv[1:]:
+        filenames = list(load_resources(
+            src,
+            patterns=['*.fon', 'font.*'],
+            patches=['PATCHES'],
+        ))
+
+        base = pathlib.Path(src)
+
+        for fname in filenames:
+            with fname.open('rb') as f:
+                bim = convert(f)
+                print(set(np.asarray(bim).ravel()))
+                bim.putpalette(palette)
+                bim.save(f'{base.name}-{fname.name}.png')
