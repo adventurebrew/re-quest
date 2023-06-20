@@ -165,6 +165,17 @@ class SCI1Archive(BaseArchive[SCI1FileEntry]):
             header = res_type.to_bytes(
                 2, signed=False, byteorder='little'
             )
+
+            # Header fixes based on SCIResDump
+            if res_type == 0:
+                header = (res_type | 0x8080).to_bytes(
+                    2, signed=False, byteorder='little'
+                ) + b'\0\0' + struct.pack('<5H3I', 320, 200, 5, 6, 256, 0, 0, 0)
+            elif res_type == 1:
+                header = (res_type | 0x8181).to_bytes(
+                    2, signed=False, byteorder='little'
+                ) + b'\0\0'
+
             if comp_size < decomp_size:
                 if method == 32:
                     decomp_data = decompress_lzs(
