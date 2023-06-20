@@ -1,6 +1,8 @@
 import argparse
+from dataclasses import dataclass
 import struct
 import sys
+from typing import Optional
 
 from sci.resource_archive.loader import load_resources
 
@@ -51,6 +53,28 @@ def escape_quotes(msg):
     return f'"{msg}"'
 
 
+@dataclass
+class MessageHeader:
+    version_id: int
+    comment_pos: Optional[int]
+    unk_count: Optional[int]
+    phrases_count: Optional[int]
+
+
+def read_header(stream):
+    version_id = read_uint32le(stream)
+    comment_pos = None
+    unk_count = None
+    if version_id & 0xFFFFFF00 > SCI_01:
+        comment_pos = read_uint16le(stream)
+    if version_id & 0xFFFFFF00 >= SCI_05:
+        unk_count = read_uint16le(stream)
+    phrases_count = read_uint16le(stream)
+    return MessageHeader(version_id, comment_pos, unk_count, phrases_count)
+
+
+
+
 # Based on TraduSCI source code available at https://erolfi.wordpress.com/tradusci/
 def load_msg_file(stream):
     offset = 0
@@ -60,30 +84,22 @@ def load_msg_file(stream):
         offset = 2
     
     stream.seek(offset)
+    header = read_header(stream)
 
-    version_id = read_uint32le(stream)
-    msg_version_tag = version_id
-    comment_pos = None
-    unk_count = None
-    if version_id & 0xFFFFFF00 > SCI_01:
-        comment_pos = read_uint16le(stream)
-    if version_id & 0xFFFFFF00 >= SCI_05:
-        unk_count = read_uint16le(stream)
-    phrases_count = read_uint16le(stream)
-
-    mversion = msg_version_tag & 0xFFFFFF00
+    mversion = header.version_id & 0xFFFFFF00
     assert mversion in {SCI_01, SCI_02_B, SCI_02_C, SCI_02_D, SCI_05, SCI_06, SCI32_100}, hex(mversion)
     if mversion in {SCI_01, SCI_02_B, SCI_02_C, SCI_02_D, SCI_05} and patch_id == PATCH:
         print(f'WARNING: should not have 0x{PATCH:04X} in header for older SCI version')
 
-    comments = [{} for _ in range(phrases_count)]
-    phrases = [{} for _ in range(phrases_count)]
+
+    t_count = header.phrases_count
+    comments = [{} for _ in range(t_count)]
+    phrases = [{} for _ in range(t_count)]
     nouns = [0 for _ in range(256)]
     verbs = [0 for _ in range(256)]
     conditions = [0 for _ in range(256)]
     talkers = [0 for _ in range(256)]
 
-    t_count = phrases_count
     unk_b_count1 = 5
     unk_b_count2 = 9
 
@@ -96,7 +112,7 @@ def load_msg_file(stream):
     tradusci2_data_pos = 0
 
     oldpos = stream.tell()
-    stream.seek((unk_b_count2 + 2) * phrases_count, 1)
+    stream.seek((unk_b_count2 + 2) * t_count, 1)
 
     temp_sign = read_until_null(stream)
 
@@ -215,7 +231,7 @@ def load_msg_file(stream):
     if mversion > SCI_01:
         stream.seek(4 + offset)
         jumpvalue = read_uint16le(stream)
-        assert jumpvalue == comment_pos, (jumpvalue, comment_pos)
+        assert jumpvalue == header.comment_pos, (jumpvalue, header.comment_pos)
         jumpvalue += 6 + offset
     
     if tradusci_format == SIERRA:
