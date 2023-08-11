@@ -7,13 +7,12 @@ import glob
 import os
 import re
 
-import config
-from agi.config import messages_csv_filename
+from config import messages_csv_filename, messages_keys
 
 
 def messages_export(srcdir, pattern, csvdir, ignore):
-    with open(os.path.join(csvdir, messages_csv_filename), 'w', newline='') as output_file:
-        dict_writer = csv.DictWriter(output_file, fieldnames=config.messages_keys)
+    with open(os.path.join(csvdir, messages_csv_filename), 'w', encoding='utf-8', newline='') as output_file:
+        dict_writer = csv.DictWriter(output_file, fieldnames=messages_keys.values())
         dict_writer.writeheader()
 
         for (room, filename) in \
@@ -31,11 +30,11 @@ def messages_export(srcdir, pattern, csvdir, ignore):
                             message = r.group(2).replace('\\"', '"')
 
                             dict_writer.writerow({
-                                config.messages_keys[0]: room,
-                                config.messages_keys[1]: idx,
-                                config.messages_keys[2]: message,
-                                config.messages_keys[3]: '',
-                                config.messages_keys[4]: '',
+                                messages_keys['room']: room,
+                                messages_keys['idx']: idx,
+                                messages_keys['original']: message,
+                                messages_keys['translation']: '',
+                                messages_keys['comments']: '',
                             })
 
 
@@ -50,7 +49,7 @@ This exports all these messages to a csv file, to be translated.
     parser.add_argument("srcdir", help="src directory containing the logic files")
     parser.add_argument("--pattern", default='*.lgc', help="logic files pattern")
     parser.add_argument("csvdir", help="directory to write messages.csv")
-    parser.add_argument("--ignore", metavar='N', type=int, nargs='+', help="logic file to be ignored (for PQ1, 105 can be ignored)")
+    parser.add_argument("--ignore", metavar='N', type=int, nargs='+', default=(), help="logic file to be ignored (for PQ1, 105 can be ignored)")
     args = parser.parse_args()
 
     messages_export(args.srcdir, args.pattern, args.csvdir, args.ignore)

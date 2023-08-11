@@ -13,11 +13,9 @@ def write_words_file(gamedir, words_by_index):
     except:
         pass
 
-    full_filename = os.path.join(gamedir, config.words_extended_file)
-
     # save a copy of the original sierra file (if we haven't already done so)
-    if not os.path.exists(os.path.join(sierra_orig_dir, config.words_extended_file)):
-        shutil.copy2(full_filename, sierra_orig_dir)
+    if not os.path.exists(os.path.join(sierra_orig_dir, config.wordsfile)):
+        shutil.copy2(os.path.join(gamedir, config.wordsfile), sierra_orig_dir)
 
     sorted_words = []
     for index in words_by_index:
@@ -54,7 +52,7 @@ def write_words_file(gamedir, words_by_index):
 
 
 def write_extended_words_tok(gamedir, sorted_words):
-    with open(os.path.join(gamedir, config.words_extended_file), "w") as f:
+    with open(os.path.join(gamedir, config.words_extended_file), "w", encoding=config.encoding) as f:
         f.write("WORDS.TOK: Unofficial extended format to support ASCII range of 128-255\n")
         for (word, index) in sorted_words:
             f.write(f"{word}\0{index}\n")

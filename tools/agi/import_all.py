@@ -6,7 +6,6 @@ import argparse
 import subprocess
 import pathlib
 
-import google_drive
 import messages_import
 import words_import
 import object_import
@@ -46,8 +45,10 @@ if __name__ == "__main__":
         print("Skipping download from Google Drive")
         print("*******************************************************************\n")
 
-    print("\nUpdating the .csv files:")
-    google_drive.update_local_csvs(args.workingdir, args.skip_download)
+    else:
+        import google_drive
+        print("\nUpdating the .csv files:")
+        google_drive.update_local_csvs(args.workingdir, args.skip_download)
 
     print("\nMessages import")
     messages_import.messages_import(os.path.join(args.gamedir, args.src), args.pattern, args.workingdir)

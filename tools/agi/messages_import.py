@@ -5,8 +5,7 @@ import re
 import shutil
 
 import config
-from agi.config import messages_csv_filename
-from agi.config import messages_keys
+from config import messages_csv_filename, messages_keys
 
 
 def update(s, index, translation):

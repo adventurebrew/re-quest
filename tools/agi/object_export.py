@@ -44,7 +44,7 @@ def read_objects(gamedir):
 
 def object_export(gamedir, csvdir):
     (objects, max_num_of_animated) = read_objects(gamedir)
-    with open(os.path.join(csvdir, config.object_csv_filename), 'w', newline='') as output_file:
+    with open(os.path.join(csvdir, config.object_csv_filename), 'w', encoding='utf-8', newline='') as output_file:
         dict_writer = csv.DictWriter(output_file, fieldnames=config.object_keys.values())
         dict_writer.writeheader()
 
