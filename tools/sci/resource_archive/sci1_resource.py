@@ -145,6 +145,16 @@ def extract(ctx, stream: IO[bytes]):
                 yield resid_to_name(resid, entry.res_type), SCI1FileEntry(resid, entry.res_type, volume, offset)
 
 
+def get_volume_file(mapfile, volume):
+    if mapfile.stem == 'RESMAP':
+        return f'RESSCI.{volume:03d}'
+    if mapfile.stem == 'MESSAGE':
+        return 'RESOURCE.MSG'
+    if mapfile.name != 'RESOURCE.MAP':
+        raise ValueError(f'{mapfile.name} indexing is yet unsupported')
+    return f'RESOURCE.{volume:03d}'
+
+
 class SCI1Archive(BaseArchive[SCI1FileEntry]):
     def _create_index(self) -> ArchiveIndex[SCI1FileEntry]:
         ctx = {}
@@ -155,7 +165,7 @@ class SCI1Archive(BaseArchive[SCI1FileEntry]):
     @contextmanager
     def read_entry32(self, entry: SCI1FileEntry) -> Iterator[IO[bytes]]:
         archive = (
-            self._filename.parent / f'RESSCI.{entry.volume:03d}'
+            self._filename.parent / get_volume_file(self._filename, entry.volume)
         )
         with self._io.open(archive, 'rb') as stream:
             stream.seek(entry.offset)
@@ -204,7 +214,7 @@ class SCI1Archive(BaseArchive[SCI1FileEntry]):
                 yield resource
             return
         archive = (
-            self._filename.parent / f'{self._filename.stem}.{entry.volume:03d}'
+            self._filename.parent / get_volume_file(self._filename, entry.volume)
         )
         with self._io.open(archive, 'rb') as stream:
             stream.seek(entry.offset)

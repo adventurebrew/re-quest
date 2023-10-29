@@ -15,7 +15,7 @@ else:
 
 def load_resources(
     base_dir: Union[str, os.PathLike[str]],
-    resmap: Sequence[str] = ('RESOURCE.MAP', 'RESMAP.000'),
+    resmap: Sequence[str] = ('RESOURCE.MAP', 'RESMAP.000', 'MESSAGE.MAP'),
     patches: Optional[Iterable[str]] = (),
     patterns: Sequence[str] = ('*',)
 ):
