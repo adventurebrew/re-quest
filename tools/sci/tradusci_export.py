@@ -1,5 +1,6 @@
 import argparse
-from dataclasses import dataclass
+from dataclasses import astuple, dataclass
+import json
 import struct
 import sys
 from typing import Optional
@@ -57,20 +58,20 @@ def escape_quotes(msg):
 class MessageHeader:
     version_id: int
     comment_pos: Optional[int]
-    unk_count: Optional[int]
+    last_msg_num: Optional[int]
     phrases_count: Optional[int]
 
 
 def read_header(stream):
     version_id = read_uint32le(stream)
     comment_pos = None
-    unk_count = None
+    last_msg_num = None
     if version_id & 0xFFFFFF00 > SCI_01:
         comment_pos = read_uint16le(stream)
     if version_id & 0xFFFFFF00 >= SCI_05:
-        unk_count = read_uint16le(stream)
+        last_msg_num = read_uint16le(stream)
     phrases_count = read_uint16le(stream)
-    return MessageHeader(version_id, comment_pos, unk_count, phrases_count)
+    return MessageHeader(version_id, comment_pos, last_msg_num, phrases_count)
 
 
 
@@ -256,7 +257,7 @@ def load_msg_file(stream):
 
             comments[i]['meta'] += stream.read(unk_b_count2 - unk_b_count1)
 
-    return mversion, phrases, comments
+    return header, mversion, phrases, comments
 
 
 def generate_rows(phrases, comments, mversion, encoding):
@@ -285,7 +286,7 @@ def generate_rows(phrases, comments, mversion, encoding):
         )
 
 
-def extract_messages(gamedir, output, encoding):
+def extract_messages(gamedir, output, encoding, stub):
     filenames = list(load_resources(
         gamedir,
         patterns=MESSAGE_PATTERNS,
@@ -311,6 +312,7 @@ def extract_messages(gamedir, output, encoding):
         'comment_text',
     )
 
+    stub_info = {}
     with open(output, 'w', encoding='utf-8', errors='surrogateescape') as out:
         print(*headers, sep=',', file=out)
         for fname in filenames:
@@ -318,10 +320,12 @@ def extract_messages(gamedir, output, encoding):
                 continue
             print(f'Loading messages from {fname}', file=sys.stderr)
             with fname.open('rb') as stream:
-                mversion, phrases, comments = load_msg_file(stream)
+                header, mversion, phrases, comments = load_msg_file(stream)
+                stub_info[fname.name] = astuple(header)
                 for info in generate_rows(phrases, comments, mversion, encoding):
                     print(fname.name, *info, sep=',', file=out)
-
+    with open(stub, 'w', encoding='utf-8') as stubfile:
+        stubfile.write(json.dumps(stub_info))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -344,6 +348,12 @@ if __name__ == '__main__':
         default=SIERRA_CODEPAGE,
         help='codepage to decode the messages',
     )
+    parser.add_argument(
+        '-s',
+        '--stub',
+        default='stub.json',
+        help='stub file for message headers',
+    )
     args = parser.parse_args()
 
-    extract_messages(args.gamedir, args.output, args.encoding)
+    extract_messages(args.gamedir, args.output, args.encoding, args.stub)
