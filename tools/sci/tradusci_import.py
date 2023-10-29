@@ -126,8 +126,8 @@ def import_messages(gamedir, output, encoding):
     }
 
     with open(output, 'r', encoding='utf-8', errors='surrogateescape') as text_stream:
-        tsv_reader = csv.DictReader(text_stream, delimiter='\t')
-        grouped = groupby(tsv_reader, key=operator.itemgetter('file'))
+        csv_reader = csv.DictReader(text_stream, delimiter=',')
+        grouped = groupby(csv_reader, key=operator.itemgetter('file'))
         for tfname, group in grouped:
             basename = Path(tfname).name
             group = list(group)
@@ -146,6 +146,9 @@ def import_messages(gamedir, output, encoding):
                     header = read_header(stream)
                     with open(fname.name, 'wb') as out:
                         out.write(save_msg_file(header, group))
+                break
+            else:
+                print(f'{basename} not found in {filenames}')
 
 
 if __name__ == '__main__':
@@ -160,7 +163,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '-i',
         '--input',
-        default='messages.tsv',
+        default='messages.csv',
         help='csv file to export the messages to',
     )
     parser.add_argument(

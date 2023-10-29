@@ -312,7 +312,7 @@ def extract_messages(gamedir, output, encoding):
     )
 
     with open(output, 'w', encoding='utf-8', errors='surrogateescape') as out:
-        print(*headers, sep='\t', file=out)
+        print(*headers, sep=',', file=out)
         for fname in filenames:
             if not (fname.stem.isnumeric() or fname.suffix.lstrip('.').isnumeric()):
                 continue
@@ -320,7 +320,7 @@ def extract_messages(gamedir, output, encoding):
             with fname.open('rb') as stream:
                 mversion, phrases, comments = load_msg_file(stream)
                 for info in generate_rows(phrases, comments, mversion, encoding):
-                    print(fname.name, *info, sep='\t', file=out)
+                    print(fname.name, *info, sep=',', file=out)
 
 
 if __name__ == '__main__':
@@ -335,7 +335,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '-o',
         '--output',
-        default='messages.tsv',
+        default='messages.csv',
         help='csv file to export the messages to',
     )
     parser.add_argument(
