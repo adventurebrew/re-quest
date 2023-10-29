@@ -125,6 +125,8 @@ def import_messages(output, encoding, stub):
         csv_reader = csv.DictReader(text_stream, delimiter=',')
         grouped = groupby(csv_reader, key=operator.itemgetter('file'))
         for tfname, group in grouped:
+            if not tfname:
+                continue
             basename = Path(tfname).name
             group = list(group)
             print(f'Loading messages for {basename}', file=sys.stderr)
