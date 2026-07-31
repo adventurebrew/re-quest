@@ -1,12 +1,16 @@
 import io
 from contextlib import contextmanager
 import struct
-from typing import IO, Iterator, NamedTuple
+from typing import IO, TYPE_CHECKING, Iterator, NamedTuple
 
-from pakal.archive import ArchiveIndex, BaseArchive, make_opener
+from pakal.archive import BaseArchive, make_opener
 
 from .compression import DecompressHuffman, decompress_comp3, decompress_dcl, decompress_lzs
 from .codec import reorderPic, reorderView
+
+if TYPE_CHECKING:
+    from pakal.archive import ArchiveIndex
+
 
 LOOKUP_ENTRY = struct.Struct('<BH')
 MAP_ENTRY_SCI10 = struct.Struct('<HI')
@@ -156,7 +160,7 @@ def get_volume_file(mapfile, volume):
 
 
 class SCI1Archive(BaseArchive[SCI1FileEntry]):
-    def _create_index(self) -> ArchiveIndex[SCI1FileEntry]:
+    def _create_index(self) -> 'ArchiveIndex[SCI1FileEntry]':
         ctx = {}
         res = dict(extract(ctx, self._stream))
         self.sci_version = ctx['sci_version']

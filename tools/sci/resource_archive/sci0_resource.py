@@ -1,11 +1,14 @@
 import io
 from contextlib import contextmanager
 import struct
-from typing import IO, Iterator, NamedTuple
+from typing import IO, TYPE_CHECKING, Iterator, NamedTuple
 
-from pakal.archive import ArchiveIndex, BaseArchive, make_opener
+from pakal.archive import BaseArchive, make_opener
 
 from .compression import DecompressHuffman, decompress_lzw
+
+if TYPE_CHECKING:
+    from pakal.archive import ArchiveIndex
 
 MAP_ENTRY = struct.Struct('<HI')
 RESOURCE_ENTRY = struct.Struct('<4H')
@@ -62,7 +65,7 @@ def extract(stream: IO[bytes]):
 
 
 class SCI0Archive(BaseArchive[SCI0FileEntry]):
-    def _create_index(self) -> ArchiveIndex[SCI0FileEntry]:
+    def _create_index(self) -> 'ArchiveIndex[SCI0FileEntry]':
         return dict(extract(self._stream))
 
     @contextmanager
